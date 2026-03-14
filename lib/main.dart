@@ -25,7 +25,6 @@ class _ExcelAppState extends State<ExcelApp> {
     _loadDefaultPath();
   }
 
-  // Tải đường dẫn đã cài đặt từ bộ nhớ máy
   Future<void> _loadDefaultPath() async {
     final prefs = await SharedPreferences.getInstance();
     setState(() {
@@ -33,16 +32,17 @@ class _ExcelAppState extends State<ExcelApp> {
     });
   }
 
-  // Nút Cài Đặt: Chọn và lưu đường dẫn mặc định
+  // SỬA NÚT CÀI ĐẶT: Đảm bảo bảng chọn thư mục hiện lên
   Future<void> _settingsPath() async {
-    if (await Permission.storage.request().isGranted || await Permission.manageExternalStorage.request().isGranted) {
-      String? selectedDirectory = await FilePicker.platform.getDirectoryPath();
-      if (selectedDirectory != null) {
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setString('default_path', selectedDirectory);
-        setState(() => _defaultPath = selectedDirectory);
-        _showSnackBar("Đã cài đặt đường dẫn: $selectedDirectory");
-      }
+    // Xin quyền truy cập trước khi mở thư mục
+    await [Permission.storage, Permission.manageExternalStorage].request();
+    
+    String? selectedDirectory = await FilePicker.platform.getDirectoryPath();
+    if (selectedDirectory != null) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('default_path', selectedDirectory);
+      setState(() => _defaultPath = selectedDirectory);
+      _showSnackBar("Đã cài đặt đường dẫn: $selectedDirectory");
     }
   }
 
@@ -52,14 +52,10 @@ class _ExcelAppState extends State<ExcelApp> {
     });
   }
 
-  // CHỨC NĂNG LƯU FILE
+  // SỬA LỖI LƯU FILE: Xử lý lỗi "Bytes are required"
   Future<void> _exportExcel() async {
     try {
-      // Yêu cầu quyền truy cập bộ nhớ
-      var status = await Permission.storage.request();
-      if (!status.isGranted) {
-        await Permission.manageExternalStorage.request();
-      }
+      await [Permission.storage, Permission.manageExternalStorage].request();
 
       var excel = ex.Excel.createExcel();
       ex.Sheet sheetObject = excel['Sheet1'];
@@ -80,41 +76,36 @@ class _ExcelAppState extends State<ExcelApp> {
         ]);
       }
 
-      var bytes = excel.encode();
+      // SỬA TẠI ĐÂY: Đảm bảo lấy được danh sách Bytes
+      final List<int>? fileBytes = excel.save();
+      if (fileBytes == null) throw "Không thể tạo dữ liệu file Excel";
+
       String fileName = "DuLieu_${DateTime.now().millisecondsSinceEpoch}.xlsx";
-      String? fullPath;
 
       if (_defaultPath != null) {
-        // Lưu vào đường dẫn đã cài đặt
-        fullPath = "$_defaultPath/$fileName";
-        final file = File(fullPath);
-        await file.writeAsBytes(bytes!);
-        _showSnackBar("Đã lưu thành công tại: $fullPath");
+        final file = File("$_defaultPath/$fileName");
+        await file.writeAsBytes(fileBytes);
+        _showSnackBar("Đã lưu thành công tại: $_defaultPath");
       } else {
-        // Nếu chưa cài đường dẫn, hiện bảng chọn
         String? selectedFile = await FilePicker.platform.saveFile(
           dialogTitle: 'Chọn nơi lưu file',
           fileName: fileName,
           type: FileType.custom,
           allowedExtensions: ['xlsx'],
+          bytes: Uint8List.fromList(fileBytes), // Truyền bytes vào đây để tránh lỗi trên Android
         );
-        if (selectedFile != null) {
-          final file = File(selectedFile);
-          await file.writeAsBytes(bytes!);
-          _showSnackBar("Đã lưu thành công!");
-        }
+        if (selectedFile != null) _showSnackBar("Đã lưu thành công!");
       }
     } catch (e) {
-      _showSnackBar("Lỗi lưu file: $e");
+      _showSnackBar("Lỗi: $e");
     }
   }
 
-  // CHỨC NĂNG MỞ FILE
   Future<void> _importExcel() async {
     FilePickerResult? result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
       allowedExtensions: ['xlsx'],
-      initialDirectory: _defaultPath, // Mở ngay tại đường dẫn cài đặt
+      initialDirectory: _defaultPath,
       withData: true,
     );
     
@@ -136,7 +127,6 @@ class _ExcelAppState extends State<ExcelApp> {
               ]);
             }
           });
-          _showSnackBar("Đã nhập dữ liệu thành công!");
           break; 
         }
       }
@@ -152,16 +142,11 @@ class _ExcelAppState extends State<ExcelApp> {
     return Scaffold(
       backgroundColor: Colors.grey[100],
       appBar: AppBar(
-        title: const Text('Edit Excel', style: TextStyle(fontWeight: FontWeight.bold)),
+        title: const Text('Edit Excel', style: TextStyle(color: Colors.white)),
         centerTitle: true,
-        elevation: 5,
-        flexibleSpace: Container(
-          decoration: const BoxDecoration(
-            gradient: LinearGradient(colors: [Colors.blueAccent, Colors.indigo])
-          ),
-        ),
+        flexibleSpace: Container(decoration: const BoxDecoration(gradient: LinearGradient(colors: [Colors.blue, Colors.indigo]))),
         actions: [
-          IconButton(icon: const Icon(Icons.settings, color: Colors.white), onPressed: _settingsPath, tooltip: "Cài Đặt"),
+          IconButton(icon: const Icon(Icons.settings, color: Colors.white), onPressed: _settingsPath),
           IconButton(icon: const Icon(Icons.file_open, color: Colors.white), onPressed: _importExcel),
           IconButton(icon: const Icon(Icons.save, color: Colors.white), onPressed: _exportExcel),
         ],
@@ -169,49 +154,21 @@ class _ExcelAppState extends State<ExcelApp> {
       body: Column(
         children: [
           if (_defaultPath != null)
-            Container(
-              padding: const EdgeInsets.all(8),
-              color: Colors.yellow[100],
-              width: double.infinity,
-              child: Text("📂 Thư mục mặc định: ${_defaultPath!.split('/').last}", 
-                textAlign: TextAlign.center, style: const TextStyle(fontSize: 12, color: Colors.brown)),
-            ),
+            Container(width: double.infinity, color: Colors.green[50], padding: const EdgeInsets.all(5),
+              child: Text("📂 Thư mục lưu: $_defaultPath", textAlign: TextAlign.center, style: const TextStyle(fontSize: 10))),
           Expanded(
             child: SingleChildScrollView(
-              padding: const EdgeInsets.all(12),
+              padding: const EdgeInsets.all(10),
               child: Card(
-                elevation: 4,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                 child: Table(
-                  border: TableBorder.symmetric(inside: BorderSide(color: Colors.grey.shade300)),
-                  columnWidths: const {
-                    0: FlexColumnWidth(2.5),
-                    1: FlexColumnWidth(1.5),
-                    2: FlexColumnWidth(1.5),
-                    3: FlexColumnWidth(1.2),
-                  },
+                  border: TableBorder.all(color: Colors.grey.shade300),
                   children: [
                     TableRow(
-                      decoration: BoxDecoration(
-                        color: Colors.indigo[400],
-                        borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
-                      ),
-                      children: ['Tên SP', 'Giá Bán', 'Giá Nhập', 'SL'].map((text) => 
-                        Padding(
-                          padding: const EdgeInsets.all(12),
-                          child: Text(text, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13))
-                        )
-                      ).toList(),
+                      decoration: const BoxDecoration(color: Colors.indigo),
+                      children: ['Tên SP', 'Giá Bán', 'Giá Nhập', 'SL'].map((t) => Padding(padding: const EdgeInsets.all(8), child: Text(t, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)))).toList(),
                     ),
-                    ..._controllers.map((rowControllers) => TableRow(
-                      children: rowControllers.map((ctrl) => Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 8),
-                        child: TextField(
-                          controller: ctrl, 
-                          style: const TextStyle(fontSize: 14),
-                          decoration: const InputDecoration(border: InputBorder.none, hintText: '...'),
-                        ),
-                      )).toList(),
+                    ..._controllers.map((row) => TableRow(
+                      children: row.map((c) => Padding(padding: const EdgeInsets.symmetric(horizontal: 5), child: TextField(controller: c, decoration: const InputDecoration(border: InputBorder.none)))).toList(),
                     )),
                   ],
                 ),
@@ -220,12 +177,7 @@ class _ExcelAppState extends State<ExcelApp> {
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _addNewRow, 
-        backgroundColor: Colors.indigo,
-        label: const Text("Thêm dòng"),
-        icon: const Icon(Icons.add),
-      ),
+      floatingActionButton: FloatingActionButton(onPressed: _addNewRow, backgroundColor: Colors.indigo, child: const Icon(Icons.add, color: Colors.white)),
     );
   }
 }
