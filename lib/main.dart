@@ -67,11 +67,11 @@ class _ExcelAppState extends State<ExcelApp> {
       final List<int>? fileBytes = excel.save();
       if (fileBytes == null) return;
 
-      // GHI ĐÈ FILE CŨ
+      // XỬ LÝ GHI ĐÈ FILE CŨ
       if (_currentOpeningFilePath != null) {
         final file = File(_currentOpeningFilePath!);
         if (await file.exists()) {
-          await file.writeAsBytes(fileBytes, mode: FileMode.write, flush: true);
+          await file.writeAsBytes(fileBytes, mode: FileMode.write, flush: true); // Thêm flush: true để chắc chắn dữ liệu được lưu
           _showSnackBar("Đã ghi đè thành công!");
           return;
         }
@@ -121,38 +121,27 @@ class _ExcelAppState extends State<ExcelApp> {
       initialDirectory: _defaultPath, withData: true,
     );
     if (result != null) {
-      String? filePath = result.files.first.path;
-      if (filePath == null) {
-        _showSnackBar("Không thể lấy đường dẫn file.");
-        return;
-      }
-
-      setState(() => _currentOpeningFilePath = filePath);
-
-      Uint8List bytes;
-      if (result.files.first.bytes != null) {
-        bytes = result.files.first.bytes!;
-      } else {
-        bytes = await File(filePath).readAsBytes();
-      }
-
-      var excel = ex.Excel.decodeBytes(bytes);
-      for (var table in excel.tables.keys) {
-        setState(() {
-          _controllers.clear();
-          var tableData = excel.tables[table]!;
-          for (int i = 1; i < tableData.rows.length; i++) {
-            var rowData = tableData.rows[i];
-            _controllers.add([
-              TextEditingController(text: rowData[0]?.value?.toString() ?? ""),
-              TextEditingController(text: rowData[1]?.value?.toString() ?? ""),
-              TextEditingController(text: rowData[2]?.value?.toString() ?? ""),
-              TextEditingController(text: rowData[3]?.value?.toString() ?? ""),
-            ]);
-          }
-        });
-        _showSnackBar("Đã mở: ${result.files.first.name}");
-        break;
+      setState(() => _currentOpeningFilePath = result.files.first.path);
+      Uint8List? bytes = result.files.first.bytes;
+      if (bytes != null) {
+        var excel = ex.Excel.decodeBytes(bytes);
+        for (var table in excel.tables.keys) {
+          setState(() {
+            _controllers.clear();
+            var tableData = excel.tables[table]!;
+            for (int i = 1; i < tableData.rows.length; i++) {
+              var rowData = tableData.rows[i];
+              _controllers.add([
+                TextEditingController(text: rowData[0]?.value?.toString() ?? ""),
+                TextEditingController(text: rowData[1]?.value?.toString() ?? ""),
+                TextEditingController(text: rowData[2]?.value?.toString() ?? ""),
+                TextEditingController(text: rowData[3]?.value?.toString() ?? ""),
+              ]);
+            }
+          });
+          _showSnackBar("Đã mở: ${result.files.first.name}");
+          break;
+        }
       }
     }
   }
@@ -163,10 +152,70 @@ class _ExcelAppState extends State<ExcelApp> {
 
   @override
   Widget build(BuildContext context) {
+    // Kiểm tra xem bàn phím có đang hiện hay không
     bool isKeyboardVisible = MediaQuery.of(context).viewInsets.bottom != 0;
 
     return Scaffold(
       backgroundColor: Colors.white,
+      // Khi bàn phím hiện, giao diện sẽ tự đẩy lên để không che khuất ô nhập
       resizeToAvoidBottomInset: true, 
       appBar: AppBar(
-        title: const Text
+        title: const Text('Edit Excel', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        centerTitle: true,
+        flexibleSpace: Container(decoration: const BoxDecoration(gradient: LinearGradient(colors: [Colors.blue, Colors.indigo]))),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.note_add, color: Colors.white),
+            onPressed: () => setState(() {
+              _controllers = [List.generate(4, (_) => TextEditingController())];
+              _currentOpeningFilePath = null;
+              _showSnackBar("Đã tạo trang mới");
+            }),
+          ),
+          IconButton(icon: const Icon(Icons.settings, color: Colors.white), onPressed: _settingsPath),
+          IconButton(icon: const Icon(Icons.file_open, color: Colors.white), onPressed: _importExcel),
+          IconButton(icon: const Icon(Icons.save, color: Colors.white), onPressed: _exportExcel),
+        ],
+      ),
+      body: Column(
+        children: [
+          Container(
+            width: double.infinity,
+            color: _currentOpeningFilePath == null ? Colors.orange[50] : Colors.green[50],
+            padding: const EdgeInsets.symmetric(vertical: 6),
+            child: Text(
+              _currentOpeningFilePath == null ? "🆕 Đang tạo file mới" : "📂 Ghi đè: ${_currentOpeningFilePath!.split('/').last}",
+              textAlign: TextAlign.center, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)
+            ),
+          ),
+          Expanded(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(8),
+              child: Table(
+                border: TableBorder.all(color: Colors.grey.shade300),
+                children: [
+                  TableRow(
+                    decoration: const BoxDecoration(color: Colors.indigo),
+                    children: ['Tên SP', 'Giá Bán', 'Giá Nhập', 'SL'].map((t) => Padding(padding: const EdgeInsets.all(10), child: Text(t, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13)))).toList(),
+                  ),
+                  ..._controllers.map((row) => TableRow(
+                    children: row.map((c) => Padding(padding: const EdgeInsets.symmetric(horizontal: 4), child: TextField(controller: c, style: const TextStyle(fontSize: 14), decoration: const InputDecoration(border: InputBorder.none, hintText: "...")))).toList(),
+                  )),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+      // CHỈ HIỆN NÚT THÊM DÒNG KHI BÀN PHÍM ĐÃ ĐÓNG
+      floatingActionButton: isKeyboardVisible 
+        ? null 
+        : FloatingActionButton.extended(
+            onPressed: _addNewRow,
+            backgroundColor: Colors.indigo,
+            label: const Text("Thêm dòng", style: TextStyle(color: Colors.white)),
+            icon: const Icon(Icons.add, color: Colors.white)
+          ),
+    );
+  }
+}
