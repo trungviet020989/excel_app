@@ -17,7 +17,7 @@ class ExcelApp extends StatefulWidget {
 class _ExcelAppState extends State<ExcelApp> {
   List<List<TextEditingController>> _controllers = [];
   String? _defaultPath;
-  String? _currentOpeningFilePath; // Biến lưu đường dẫn file đang mở để ghi đè
+  String? _currentOpeningFilePath;
 
   @override
   void initState() {
@@ -28,9 +28,7 @@ class _ExcelAppState extends State<ExcelApp> {
 
   Future<void> _loadDefaultPath() async {
     final prefs = await SharedPreferences.getInstance();
-    setState(() {
-      _defaultPath = prefs.getString('default_path');
-    });
+    setState(() => _defaultPath = prefs.getString('default_path'));
   }
 
   Future<void> _settingsPath() async {
@@ -40,17 +38,14 @@ class _ExcelAppState extends State<ExcelApp> {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('default_path', selectedDirectory);
       setState(() => _defaultPath = selectedDirectory);
-      _showSnackBar("Đã cài đặt đường dẫn: $selectedDirectory");
+      _showSnackBar("Đã cài đặt đường dẫn lưu mặc định.");
     }
   }
 
   void _addNewRow() {
-    setState(() {
-      _controllers.add(List.generate(4, (_) => TextEditingController()));
-    });
+    setState(() => _controllers.add(List.generate(4, (_) => TextEditingController())));
   }
 
-  // Hàm xử lý lưu file (Ghi đè hoặc Tạo mới)
   Future<void> _exportExcel() async {
     try {
       await [Permission.storage, Permission.manageExternalStorage].request();
@@ -58,70 +53,60 @@ class _ExcelAppState extends State<ExcelApp> {
       ex.Sheet sheetObject = excel['Sheet1'];
 
       sheetObject.appendRow([
-        ex.TextCellValue('Tên Sản Phẩm'),
-        ex.TextCellValue('Giá Bán'),
-        ex.TextCellValue('Giá Nhập'),
-        ex.TextCellValue('Số Lượng'),
+        ex.TextCellValue('Tên Sản Phẩm'), ex.TextCellValue('Giá Bán'),
+        ex.TextCellValue('Giá Nhập'), ex.TextCellValue('Số Lượng'),
       ]);
 
       for (var row in _controllers) {
         sheetObject.appendRow([
-          ex.TextCellValue(row[0].text),
-          ex.TextCellValue(row[1].text),
-          ex.TextCellValue(row[2].text),
-          ex.TextCellValue(row[3].text),
+          ex.TextCellValue(row[0].text), ex.TextCellValue(row[1].text),
+          ex.TextCellValue(row[2].text), ex.TextCellValue(row[3].text),
         ]);
       }
 
       final List<int>? fileBytes = excel.save();
       if (fileBytes == null) return;
 
-      // TRƯỜNG HỢP 1: GHI ĐÈ (Nếu đang mở một file cũ)
+      // XỬ LÝ GHI ĐÈ FILE CŨ
       if (_currentOpeningFilePath != null) {
         final file = File(_currentOpeningFilePath!);
-        await file.writeAsBytes(fileBytes);
-        _showSnackBar("Đã ghi đè thành công!");
-        return;
+        if (await file.exists()) {
+          await file.writeAsBytes(fileBytes, mode: FileMode.write, flush: true); // Thêm flush: true để chắc chắn dữ liệu được lưu
+          _showSnackBar("Đã ghi đè thành công!");
+          return;
+        }
       }
 
-      // TRƯỜNG HỢP 2: TẠO MỚI (Hiện hộp thoại đặt tên)
+      // LƯU FILE MỚI
       String? customFileName = await _showFileNameDialog();
       if (customFileName == null || customFileName.isEmpty) return;
-      
       String finalFileName = customFileName.endsWith('.xlsx') ? customFileName : "$customFileName.xlsx";
 
       if (_defaultPath != null) {
         final file = File("$_defaultPath/$finalFileName");
-        await file.writeAsBytes(fileBytes);
-        setState(() => _currentOpeningFilePath = file.path); // Sau khi lưu mới, nó trở thành file đang mở
-        _showSnackBar("Đã lưu mới tại: $finalFileName");
+        await file.writeAsBytes(fileBytes, flush: true);
+        setState(() => _currentOpeningFilePath = file.path);
+        _showSnackBar("Đã lưu mới: $finalFileName");
       } else {
         String? selectedFile = await FilePicker.platform.saveFile(
-          dialogTitle: 'Chọn nơi lưu file',
-          fileName: finalFileName,
-          type: FileType.custom,
-          allowedExtensions: ['xlsx'],
+          dialogTitle: 'Chọn nơi lưu', fileName: finalFileName,
+          type: FileType.custom, allowedExtensions: ['xlsx'],
           bytes: Uint8List.fromList(fileBytes),
         );
-        if (selectedFile != null) _showSnackBar("Đã lưu thành success!");
+        if (selectedFile != null) _showSnackBar("Lưu thành công!");
       }
     } catch (e) {
       _showSnackBar("Lỗi: $e");
     }
   }
 
-  // Hộp thoại đặt tên file
   Future<String?> _showFileNameDialog() async {
     TextEditingController _nameCtrl = TextEditingController();
     return showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text("Đặt tên file mới"),
-        content: TextField(
-          controller: _nameCtrl,
-          decoration: const InputDecoration(hintText: "Nhập tên (VD: DonHang_A)"),
-          autofocus: true,
-        ),
+        title: const Text("Tên file mới"),
+        content: TextField(controller: _nameCtrl, decoration: const InputDecoration(hintText: "Nhập tên file..."), autofocus: true),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context), child: const Text("Hủy")),
           ElevatedButton(onPressed: () => Navigator.pop(context, _nameCtrl.text), child: const Text("Lưu")),
@@ -132,16 +117,11 @@ class _ExcelAppState extends State<ExcelApp> {
 
   Future<void> _importExcel() async {
     FilePickerResult? result = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: ['xlsx'],
-      initialDirectory: _defaultPath,
-      withData: true,
+      type: FileType.custom, allowedExtensions: ['xlsx'],
+      initialDirectory: _defaultPath, withData: true,
     );
-    
     if (result != null) {
-      // Lưu lại đường dẫn để phục vụ ghi đè
-      _currentOpeningFilePath = result.files.first.path;
-      
+      setState(() => _currentOpeningFilePath = result.files.first.path);
       Uint8List? bytes = result.files.first.bytes;
       if (bytes != null) {
         var excel = ex.Excel.decodeBytes(bytes);
@@ -159,35 +139,38 @@ class _ExcelAppState extends State<ExcelApp> {
               ]);
             }
           });
-          _showSnackBar("Đã mở file: ${result.files.first.name}");
-          break; 
+          _showSnackBar("Đã mở: ${result.files.first.name}");
+          break;
         }
       }
     }
   }
 
   void _showSnackBar(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message), duration: const Duration(seconds: 2)));
   }
 
   @override
   Widget build(BuildContext context) {
+    // Kiểm tra xem bàn phím có đang hiện hay không
+    bool isKeyboardVisible = MediaQuery.of(context).viewInsets.bottom != 0;
+
     return Scaffold(
       backgroundColor: Colors.white,
+      // Khi bàn phím hiện, giao diện sẽ tự đẩy lên để không che khuất ô nhập
+      resizeToAvoidBottomInset: true, 
       appBar: AppBar(
         title: const Text('Edit Excel', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
         centerTitle: true,
         flexibleSpace: Container(decoration: const BoxDecoration(gradient: LinearGradient(colors: [Colors.blue, Colors.indigo]))),
         actions: [
-          // Nút tạo trang mới (Xóa trắng để lưu file mới)
           IconButton(
-            icon: const Icon(Icons.note_add, color: Colors.white), 
+            icon: const Icon(Icons.note_add, color: Colors.white),
             onPressed: () => setState(() {
               _controllers = [List.generate(4, (_) => TextEditingController())];
               _currentOpeningFilePath = null;
               _showSnackBar("Đã tạo trang mới");
             }),
-            tooltip: "Trang mới",
           ),
           IconButton(icon: const Icon(Icons.settings, color: Colors.white), onPressed: _settingsPath),
           IconButton(icon: const Icon(Icons.file_open, color: Colors.white), onPressed: _importExcel),
@@ -197,26 +180,26 @@ class _ExcelAppState extends State<ExcelApp> {
       body: Column(
         children: [
           Container(
-            width: double.infinity, 
+            width: double.infinity,
             color: _currentOpeningFilePath == null ? Colors.orange[50] : Colors.green[50],
-            padding: const EdgeInsets.symmetric(vertical: 5),
+            padding: const EdgeInsets.symmetric(vertical: 6),
             child: Text(
               _currentOpeningFilePath == null ? "🆕 Đang tạo file mới" : "📂 Ghi đè: ${_currentOpeningFilePath!.split('/').last}",
-              textAlign: TextAlign.center, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500)
+              textAlign: TextAlign.center, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)
             ),
           ),
           Expanded(
             child: SingleChildScrollView(
-              padding: const EdgeInsets.all(10),
+              padding: const EdgeInsets.all(8),
               child: Table(
-                border: TableBorder.all(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(5)),
+                border: TableBorder.all(color: Colors.grey.shade300),
                 children: [
                   TableRow(
                     decoration: const BoxDecoration(color: Colors.indigo),
                     children: ['Tên SP', 'Giá Bán', 'Giá Nhập', 'SL'].map((t) => Padding(padding: const EdgeInsets.all(10), child: Text(t, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13)))).toList(),
                   ),
                   ..._controllers.map((row) => TableRow(
-                    children: row.map((c) => Padding(padding: const EdgeInsets.symmetric(horizontal: 5), child: TextField(controller: c, decoration: const InputDecoration(border: InputBorder.none, hintText: "...")))).toList(),
+                    children: row.map((c) => Padding(padding: const EdgeInsets.symmetric(horizontal: 4), child: TextField(controller: c, style: const TextStyle(fontSize: 14), decoration: const InputDecoration(border: InputBorder.none, hintText: "...")))).toList(),
                   )),
                 ],
               ),
@@ -224,12 +207,15 @@ class _ExcelAppState extends State<ExcelApp> {
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _addNewRow, 
-        backgroundColor: Colors.indigo, 
-        label: const Text("Thêm dòng", style: TextStyle(color: Colors.white)),
-        icon: const Icon(Icons.add, color: Colors.white)
-      ),
+      // CHỈ HIỆN NÚT THÊM DÒNG KHI BÀN PHÍM ĐÃ ĐÓNG
+      floatingActionButton: isKeyboardVisible 
+        ? null 
+        : FloatingActionButton.extended(
+            onPressed: _addNewRow,
+            backgroundColor: Colors.indigo,
+            label: const Text("ADD", style: TextStyle(color: Colors.white)),
+            icon: const Icon(Icons.add, color: Colors.white)
+          ),
     );
   }
 }
