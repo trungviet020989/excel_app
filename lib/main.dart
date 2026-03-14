@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:excel/excel.dart' as ex;
 import 'dart:typed_data';
+import 'dart:io';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 void main() => runApp(const MaterialApp(home: ExcelApp(), debugShowCheckedModeBanner: false));
 
@@ -13,11 +16,34 @@ class ExcelApp extends StatefulWidget {
 
 class _ExcelAppState extends State<ExcelApp> {
   List<List<TextEditingController>> _controllers = [];
+  String? _defaultPath;
 
   @override
   void initState() {
     super.initState();
     _addNewRow();
+    _loadDefaultPath();
+  }
+
+  // Tải đường dẫn đã cài đặt từ bộ nhớ máy
+  Future<void> _loadDefaultPath() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _defaultPath = prefs.getString('default_path');
+    });
+  }
+
+  // Nút Cài Đặt: Chọn và lưu đường dẫn mặc định
+  Future<void> _settingsPath() async {
+    if (await Permission.storage.request().isGranted || await Permission.manageExternalStorage.request().isGranted) {
+      String? selectedDirectory = await FilePicker.platform.getDirectoryPath();
+      if (selectedDirectory != null) {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('default_path', selectedDirectory);
+        setState(() => _defaultPath = selectedDirectory);
+        _showSnackBar("Đã cài đặt đường dẫn: $selectedDirectory");
+      }
+    }
   }
 
   void _addNewRow() {
@@ -26,30 +52,61 @@ class _ExcelAppState extends State<ExcelApp> {
     });
   }
 
-  // CHỨC NĂNG LƯU FILE - Đã sửa lỗi CellValue
+  // CHỨC NĂNG LƯU FILE
   Future<void> _exportExcel() async {
-    var excel = ex.Excel.createExcel();
-    ex.Sheet sheetObject = excel['Sheet1'];
+    try {
+      // Yêu cầu quyền truy cập bộ nhớ
+      var status = await Permission.storage.request();
+      if (!status.isGranted) {
+        await Permission.manageExternalStorage.request();
+      }
 
-    // Tiêu đề: Phải dùng TextCellValue
-    sheetObject.appendRow([
-      ex.TextCellValue('Tên Sản Phẩm'),
-      ex.TextCellValue('Giá Bán'),
-      ex.TextCellValue('Giá Nhập'),
-      ex.TextCellValue('Số Lượng'),
-    ]);
+      var excel = ex.Excel.createExcel();
+      ex.Sheet sheetObject = excel['Sheet1'];
 
-    // Dữ liệu: Chuyển đổi từ Controller sang TextCellValue
-    for (var row in _controllers) {
       sheetObject.appendRow([
-        ex.TextCellValue(row[0].text),
-        ex.TextCellValue(row[1].text),
-        ex.TextCellValue(row[2].text),
-        ex.TextCellValue(row[3].text),
+        ex.TextCellValue('Tên Sản Phẩm'),
+        ex.TextCellValue('Giá Bán'),
+        ex.TextCellValue('Giá Nhập'),
+        ex.TextCellValue('Số Lượng'),
       ]);
-    }
 
-    excel.save(fileName: "DuLieuBanHang.xlsx");
+      for (var row in _controllers) {
+        sheetObject.appendRow([
+          ex.TextCellValue(row[0].text),
+          ex.TextCellValue(row[1].text),
+          ex.TextCellValue(row[2].text),
+          ex.TextCellValue(row[3].text),
+        ]);
+      }
+
+      var bytes = excel.encode();
+      String fileName = "DuLieu_${DateTime.now().millisecondsSinceEpoch}.xlsx";
+      String? fullPath;
+
+      if (_defaultPath != null) {
+        // Lưu vào đường dẫn đã cài đặt
+        fullPath = "$_defaultPath/$fileName";
+        final file = File(fullPath);
+        await file.writeAsBytes(bytes!);
+        _showSnackBar("Đã lưu thành công tại: $fullPath");
+      } else {
+        // Nếu chưa cài đường dẫn, hiện bảng chọn
+        String? selectedFile = await FilePicker.platform.saveFile(
+          dialogTitle: 'Chọn nơi lưu file',
+          fileName: fileName,
+          type: FileType.custom,
+          allowedExtensions: ['xlsx'],
+        );
+        if (selectedFile != null) {
+          final file = File(selectedFile);
+          await file.writeAsBytes(bytes!);
+          _showSnackBar("Đã lưu thành công!");
+        }
+      }
+    } catch (e) {
+      _showSnackBar("Lỗi lưu file: $e");
+    }
   }
 
   // CHỨC NĂNG MỞ FILE
@@ -57,6 +114,7 @@ class _ExcelAppState extends State<ExcelApp> {
     FilePickerResult? result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
       allowedExtensions: ['xlsx'],
+      initialDirectory: _defaultPath, // Mở ngay tại đường dẫn cài đặt
       withData: true,
     );
     
@@ -68,7 +126,6 @@ class _ExcelAppState extends State<ExcelApp> {
           setState(() {
             _controllers.clear();
             var tableData = excel.tables[table]!;
-            // Bỏ qua hàng tiêu đề
             for (int i = 1; i < tableData.rows.length; i++) {
               var rowData = tableData.rows[i];
               _controllers.add([
@@ -79,53 +136,96 @@ class _ExcelAppState extends State<ExcelApp> {
               ]);
             }
           });
+          _showSnackBar("Đã nhập dữ liệu thành công!");
           break; 
         }
       }
     }
   }
 
+  void _showSnackBar(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: Colors.grey[100],
       appBar: AppBar(
-        title: const Text('Phần mềm Excel 4 Cột - Full Chức Năng'),
-        backgroundColor: Colors.blueAccent,
+        title: const Text('Edit Excel', style: TextStyle(fontWeight: FontWeight.bold)),
+        centerTitle: true,
+        elevation: 5,
+        flexibleSpace: Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(colors: [Colors.blueAccent, Colors.indigo])
+          ),
+        ),
         actions: [
-          IconButton(icon: const Icon(Icons.file_open), onPressed: _importExcel),
-          IconButton(icon: const Icon(Icons.save), onPressed: _exportExcel),
+          IconButton(icon: const Icon(Icons.settings, color: Colors.white), onPressed: _settingsPath, tooltip: "Cài Đặt"),
+          IconButton(icon: const Icon(Icons.file_open, color: Colors.white), onPressed: _importExcel),
+          IconButton(icon: const Icon(Icons.save, color: Colors.white), onPressed: _exportExcel),
         ],
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(15),
-        child: Table(
-          border: TableBorder.all(color: Colors.grey.shade400),
-          columnWidths: const {
-            0: FlexColumnWidth(3),
-            1: FlexColumnWidth(1.5),
-            2: FlexColumnWidth(1.5),
-            3: FlexColumnWidth(1.5),
-          },
-          children: [
-            TableRow(
-              decoration: const BoxDecoration(color: Colors.blue),
-              children: ['Tên SP', 'Giá Bán', 'Giá Nhập', 'Số Lượng'].map((text) => 
-                Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: Text(text, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold))
-                )
-              ).toList(),
+      body: Column(
+        children: [
+          if (_defaultPath != null)
+            Container(
+              padding: const EdgeInsets.all(8),
+              color: Colors.yellow[100],
+              width: double.infinity,
+              child: Text("📂 Thư mục mặc định: ${_defaultPath!.split('/').last}", 
+                textAlign: TextAlign.center, style: const TextStyle(fontSize: 12, color: Colors.brown)),
             ),
-            ..._controllers.map((rowControllers) => TableRow(
-              children: rowControllers.map((ctrl) => Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 10),
-                child: TextField(controller: ctrl, decoration: const InputDecoration(border: InputBorder.none)),
-              )).toList(),
-            )),
-          ],
-        ),
+          Expanded(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(12),
+              child: Card(
+                elevation: 4,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                child: Table(
+                  border: TableBorder.symmetric(inside: BorderSide(color: Colors.grey.shade300)),
+                  columnWidths: const {
+                    0: FlexColumnWidth(2.5),
+                    1: FlexColumnWidth(1.5),
+                    2: FlexColumnWidth(1.5),
+                    3: FlexColumnWidth(1.2),
+                  },
+                  children: [
+                    TableRow(
+                      decoration: BoxDecoration(
+                        color: Colors.indigo[400],
+                        borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+                      ),
+                      children: ['Tên SP', 'Giá Bán', 'Giá Nhập', 'SL'].map((text) => 
+                        Padding(
+                          padding: const EdgeInsets.all(12),
+                          child: Text(text, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13))
+                        )
+                      ).toList(),
+                    ),
+                    ..._controllers.map((rowControllers) => TableRow(
+                      children: rowControllers.map((ctrl) => Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                        child: TextField(
+                          controller: ctrl, 
+                          style: const TextStyle(fontSize: 14),
+                          decoration: const InputDecoration(border: InputBorder.none, hintText: '...'),
+                        ),
+                      )).toList(),
+                    )),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
-      floatingActionButton: FloatingActionButton(onPressed: _addNewRow, child: const Icon(Icons.add)),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _addNewRow, 
+        backgroundColor: Colors.indigo,
+        label: const Text("Thêm dòng"),
+        icon: const Icon(Icons.add),
+      ),
     );
   }
 }
