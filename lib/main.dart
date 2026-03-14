@@ -38,7 +38,7 @@ class _ExcelAppState extends State<ExcelApp> {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('default_path', selectedDirectory);
       setState(() => _defaultPath = selectedDirectory);
-      _showSnackBar("Đã cài đặt đường dẫn lưu mặc định.");
+      _showSnackBar("Đã cài đặt đường dẫn mặc định.");
     }
   }
 
@@ -46,6 +46,7 @@ class _ExcelAppState extends State<ExcelApp> {
     setState(() => _controllers.add(List.generate(4, (_) => TextEditingController())));
   }
 
+  // HÀM LƯU FILE CẢI TIẾN
   Future<void> _exportExcel() async {
     try {
       await [Permission.storage, Permission.manageExternalStorage].request();
@@ -67,17 +68,19 @@ class _ExcelAppState extends State<ExcelApp> {
       final List<int>? fileBytes = excel.save();
       if (fileBytes == null) return;
 
-      // XỬ LÝ GHI ĐÈ FILE CŨ
+      // XỬ LÝ GHI ĐÈ FILE CŨ (SỬA LỖI TẠI ĐÂY)
       if (_currentOpeningFilePath != null) {
         final file = File(_currentOpeningFilePath!);
         if (await file.exists()) {
-          await file.writeAsBytes(fileBytes, mode: FileMode.write, flush: true); // Thêm flush: true để chắc chắn dữ liệu được lưu
+          // Xóa file cũ đi và tạo mới cùng tên để đảm bảo ghi đè dữ liệu mới hoàn toàn
+          await file.delete(); 
+          await file.writeAsBytes(fileBytes, flush: true);
           _showSnackBar("Đã ghi đè thành công!");
           return;
         }
       }
 
-      // LƯU FILE MỚI
+      // LƯU FILE MỚI (Nếu không phải ghi đè)
       String? customFileName = await _showFileNameDialog();
       if (customFileName == null || customFileName.isEmpty) return;
       String finalFileName = customFileName.endsWith('.xlsx') ? customFileName : "$customFileName.xlsx";
@@ -93,7 +96,10 @@ class _ExcelAppState extends State<ExcelApp> {
           type: FileType.custom, allowedExtensions: ['xlsx'],
           bytes: Uint8List.fromList(fileBytes),
         );
-        if (selectedFile != null) _showSnackBar("Lưu thành công!");
+        if (selectedFile != null) {
+          setState(() => _currentOpeningFilePath = selectedFile);
+          _showSnackBar("Lưu thành công!");
+        }
       }
     } catch (e) {
       _showSnackBar("Lỗi: $e");
@@ -121,7 +127,9 @@ class _ExcelAppState extends State<ExcelApp> {
       initialDirectory: _defaultPath, withData: true,
     );
     if (result != null) {
+      // Quan trọng: Lưu lại đường dẫn để phục vụ ghi đè sau này
       setState(() => _currentOpeningFilePath = result.files.first.path);
+      
       Uint8List? bytes = result.files.first.bytes;
       if (bytes != null) {
         var excel = ex.Excel.decodeBytes(bytes);
@@ -139,7 +147,7 @@ class _ExcelAppState extends State<ExcelApp> {
               ]);
             }
           });
-          _showSnackBar("Đã mở: ${result.files.first.name}");
+          _showSnackBar("Đã mở file.");
           break;
         }
       }
@@ -152,12 +160,10 @@ class _ExcelAppState extends State<ExcelApp> {
 
   @override
   Widget build(BuildContext context) {
-    // Kiểm tra xem bàn phím có đang hiện hay không
     bool isKeyboardVisible = MediaQuery.of(context).viewInsets.bottom != 0;
 
     return Scaffold(
       backgroundColor: Colors.white,
-      // Khi bàn phím hiện, giao diện sẽ tự đẩy lên để không che khuất ô nhập
       resizeToAvoidBottomInset: true, 
       appBar: AppBar(
         title: const Text('Edit Excel', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
@@ -207,13 +213,12 @@ class _ExcelAppState extends State<ExcelApp> {
           ),
         ],
       ),
-      // CHỈ HIỆN NÚT THÊM DÒNG KHI BÀN PHÍM ĐÃ ĐÓNG
       floatingActionButton: isKeyboardVisible 
         ? null 
         : FloatingActionButton.extended(
             onPressed: _addNewRow,
             backgroundColor: Colors.indigo,
-            label: const Text("ADD", style: TextStyle(color: Colors.white)),
+            label: const Text("Add", style: TextStyle(color: Colors.white)),
             icon: const Icon(Icons.add, color: Colors.white)
           ),
     );
