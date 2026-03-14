@@ -116,35 +116,52 @@ class _ExcelAppState extends State<ExcelApp> {
   }
 
   Future<void> _importExcel() async {
-    FilePickerResult? result = await FilePicker.platform.pickFiles(
-      type: FileType.custom, allowedExtensions: ['xlsx'],
-      initialDirectory: _defaultPath, withData: true,
-    );
-    if (result != null) {
-      setState(() => _currentOpeningFilePath = result.files.first.path);
-      Uint8List? bytes = result.files.first.bytes;
-      if (bytes != null) {
-        var excel = ex.Excel.decodeBytes(bytes);
-        for (var table in excel.tables.keys) {
-          setState(() {
-            _controllers.clear();
-            var tableData = excel.tables[table]!;
-            for (int i = 1; i < tableData.rows.length; i++) {
-              var rowData = tableData.rows[i];
-              _controllers.add([
-                TextEditingController(text: rowData[0]?.value?.toString() ?? ""),
-                TextEditingController(text: rowData[1]?.value?.toString() ?? ""),
-                TextEditingController(text: rowData[2]?.value?.toString() ?? ""),
-                TextEditingController(text: rowData[3]?.value?.toString() ?? ""),
-              ]);
-            }
-          });
-          _showSnackBar("Đã mở: ${result.files.first.name}");
-          break;
+  FilePickerResult? result = await FilePicker.platform.pickFiles(
+    type: FileType.custom,
+    allowedExtensions: ['xlsx'],
+    initialDirectory: _defaultPath,
+    withData: true,
+  );
+  if (result != null) {
+    // Lấy đường dẫn file thực tế
+    String? filePath = result.files.first.path;
+    if (filePath == null) {
+      _showSnackBar("Không thể lấy đường dẫn file.");
+      return;
+    }
+
+    // Lưu lại đường dẫn để sau này ghi đè
+    setState(() => _currentOpeningFilePath = filePath);
+
+    // Đọc dữ liệu từ bytes hoặc từ file path
+    Uint8List bytes;
+    if (result.files.first.bytes != null) {
+      bytes = result.files.first.bytes!;
+    } else {
+      bytes = await File(filePath).readAsBytes();
+    }
+
+    var excel = ex.Excel.decodeBytes(bytes);
+    for (var table in excel.tables.keys) {
+      setState(() {
+        _controllers.clear();
+        var tableData = excel.tables[table]!;
+        for (int i = 1; i < tableData.rows.length; i++) {
+          var rowData = tableData.rows[i];
+          _controllers.add([
+            TextEditingController(text: rowData[0]?.value?.toString() ?? ""),
+            TextEditingController(text: rowData[1]?.value?.toString() ?? ""),
+            TextEditingController(text: rowData[2]?.value?.toString() ?? ""),
+            TextEditingController(text: rowData[3]?.value?.toString() ?? ""),
+          ]);
         }
-      }
+      });
+      _showSnackBar("Đã mở: ${result.files.first.name}");
+      break;
     }
   }
+}
+
 
   void _showSnackBar(String message) {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message), duration: const Duration(seconds: 2)));
