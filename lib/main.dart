@@ -68,11 +68,11 @@ class _ExcelAppState extends State<ExcelApp> {
       if (fileBytes == null) return;
 
       // XỬ LÝ GHI ĐÈ FILE CŨ
-      if (_currentOpeningFilePath != null) {
-        final file = File(_currentOpeningFilePath!);
-        if (await file.exists()) {
-          await file.writeAsBytes(fileBytes, mode: FileMode.write, flush: true); // Thêm flush: true để chắc chắn dữ liệu được lưu
-          _showSnackBar("Đã ghi đè thành công!");
+        if (_currentOpeningFilePath != null) {
+          final file = File(_currentOpeningFilePath!);
+          // Luôn ghi đè vào file này, không cần kiểm tra exists
+          await file.writeAsBytes(fileBytes, mode: FileMode.write, flush: true);
+          _showSnackBar("Đã ghi đè thành công: ${file.path}");
           return;
         }
       }
