@@ -17,7 +17,7 @@ class ExcelApp extends StatefulWidget {
 class _ExcelAppState extends State<ExcelApp> {
   List<List<TextEditingController>> _controllers = [];
   String? _defaultPath;
-  String? _currentOpeningFilePath;
+  String? _currentOpeningFileName; // Lưu tên file thay vì full path để tránh lỗi permission
 
   @override
   void initState() {
@@ -48,7 +48,6 @@ class _ExcelAppState extends State<ExcelApp> {
 
   Future<void> _exportExcel() async {
     try {
-      // Yêu cầu quyền truy cập bộ nhớ
       if (Platform.isAndroid) {
         await [Permission.storage, Permission.manageExternalStorage].request();
       }
@@ -72,40 +71,30 @@ class _ExcelAppState extends State<ExcelApp> {
       if (fileBytes == null) return;
       Uint8List bytes = Uint8List.fromList(fileBytes);
 
-      // XỬ LÝ GHI ĐÈ FILE CŨ (Nếu đang mở một file có sẵn)
-      if (_currentOpeningFilePath != null) {
-        final file = File(_currentOpeningFilePath!);
-        try {
-          await file.writeAsBytes(bytes, mode: FileMode.write, flush: true);
-          _showSnackBar("Đã ghi đè thành công!");
-          return;
-        } catch (e) {
-          debugPrint("Không thể ghi đè trực tiếp, chuyển sang lưu mới: $e");
-        }
+      // ƯU TIÊN: Dùng saveFile của FilePicker để ghi đè hợp lệ theo chuẩn Android
+      String? fileNameToSave;
+      
+      if (_currentOpeningFileName != null) {
+        fileNameToSave = _currentOpeningFileName;
+      } else {
+        fileNameToSave = await _showFileNameDialog();
       }
 
-      // LƯU FILE MỚI (Nếu chưa có file hoặc ghi đè lỗi)
-      String? customFileName = await _showFileNameDialog();
-      if (customFileName == null || customFileName.isEmpty) return;
-      String finalFileName = customFileName.endsWith('.xlsx') ? customFileName : "$customFileName.xlsx";
+      if (fileNameToSave == null || fileNameToSave.isEmpty) return;
+      if (!fileNameToSave.endsWith('.xlsx')) fileNameToSave += '.xlsx';
 
-      if (_defaultPath != null) {
-        final file = File("$_defaultPath/$finalFileName");
-        await file.writeAsBytes(bytes, flush: true);
-        setState(() => _currentOpeningFilePath = file.path);
-        _showSnackBar("Đã lưu mới: $finalFileName");
-      } else {
-        String? selectedFile = await FilePicker.platform.saveFile(
-          dialogTitle: 'Chọn nơi lưu', 
-          fileName: finalFileName,
-          type: FileType.custom, 
-          allowedExtensions: ['xlsx'],
-          bytes: bytes,
-        );
-        if (selectedFile != null) {
-          setState(() => _currentOpeningFilePath = selectedFile);
-          _showSnackBar("Lưu thành công!");
-        }
+      // Gọi lệnh lưu của hệ thống (Đây là cách chắc chắn nhất để ghi đè thành công)
+      String? resultPath = await FilePicker.platform.saveFile(
+        dialogTitle: 'Đang lưu file...',
+        fileName: fileNameToSave,
+        type: FileType.custom,
+        allowedExtensions: ['xlsx'],
+        bytes: bytes,
+      );
+
+      if (resultPath != null) {
+        setState(() => _currentOpeningFileName = fileNameToSave);
+        _showSnackBar("Lưu thành công!");
       }
     } catch (e) {
       _showSnackBar("Lỗi: $e");
@@ -131,13 +120,12 @@ class _ExcelAppState extends State<ExcelApp> {
     FilePickerResult? result = await FilePicker.platform.pickFiles(
       type: FileType.custom, 
       allowedExtensions: ['xlsx'],
-      initialDirectory: _defaultPath, 
+      initialDirectory: _defaultPath,
       withData: true,
     );
     
-    if (result != null && result.files.single.path != null) {
-      // Lưu đường dẫn file để có thể ghi đè sau này
-      setState(() => _currentOpeningFilePath = result.files.single.path);
+    if (result != null) {
+      setState(() => _currentOpeningFileName = result.files.single.name);
       
       Uint8List? bytes = result.files.single.bytes;
       if (bytes != null) {
@@ -183,7 +171,7 @@ class _ExcelAppState extends State<ExcelApp> {
             icon: const Icon(Icons.note_add, color: Colors.white),
             onPressed: () => setState(() {
               _controllers = [List.generate(4, (_) => TextEditingController())];
-              _currentOpeningFilePath = null;
+              _currentOpeningFileName = null;
               _showSnackBar("Đã tạo trang mới");
             }),
           ),
@@ -196,10 +184,10 @@ class _ExcelAppState extends State<ExcelApp> {
         children: [
           Container(
             width: double.infinity,
-            color: _currentOpeningFilePath == null ? Colors.orange[50] : Colors.green[50],
+            color: _currentOpeningFileName == null ? Colors.orange[50] : Colors.green[50],
             padding: const EdgeInsets.symmetric(vertical: 6),
             child: Text(
-              _currentOpeningFilePath == null ? "🆕 Đang tạo file mới" : "📂 Ghi đè: ${_currentOpeningFilePath!.split('/').last}",
+              _currentOpeningFileName == null ? "🆕 Đang tạo file mới" : "📂 Ghi đè: $_currentOpeningFileName",
               textAlign: TextAlign.center, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)
             ),
           ),
