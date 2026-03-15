@@ -48,7 +48,11 @@ class _ExcelAppState extends State<ExcelApp> {
 
   Future<void> _exportExcel() async {
     try {
-      await [Permission.storage, Permission.manageExternalStorage].request();
+      // Yêu cầu quyền truy cập bộ nhớ
+      if (Platform.isAndroid) {
+        await [Permission.storage, Permission.manageExternalStorage].request();
+      }
+
       var excel = ex.Excel.createExcel();
       ex.Sheet sheetObject = excel['Sheet1'];
 
@@ -66,34 +70,42 @@ class _ExcelAppState extends State<ExcelApp> {
 
       final List<int>? fileBytes = excel.save();
       if (fileBytes == null) return;
+      Uint8List bytes = Uint8List.fromList(fileBytes);
 
-      // XỬ LÝ GHI ĐÈ FILE CŨ
-        if (_currentOpeningFilePath != null) {
-          final file = File(_currentOpeningFilePath!);
-          // Luôn ghi đè vào file này, không cần kiểm tra exists
-          await file.writeAsBytes(fileBytes, mode: FileMode.write, flush: true);
-          _showSnackBar("Đã ghi đè thành công: ${file.path}");
+      // XỬ LÝ GHI ĐÈ FILE CŨ (Nếu đang mở một file có sẵn)
+      if (_currentOpeningFilePath != null) {
+        final file = File(_currentOpeningFilePath!);
+        try {
+          await file.writeAsBytes(bytes, mode: FileMode.write, flush: true);
+          _showSnackBar("Đã ghi đè thành công!");
           return;
+        } catch (e) {
+          debugPrint("Không thể ghi đè trực tiếp, chuyển sang lưu mới: $e");
         }
       }
 
-      // LƯU FILE MỚI
+      // LƯU FILE MỚI (Nếu chưa có file hoặc ghi đè lỗi)
       String? customFileName = await _showFileNameDialog();
       if (customFileName == null || customFileName.isEmpty) return;
       String finalFileName = customFileName.endsWith('.xlsx') ? customFileName : "$customFileName.xlsx";
 
       if (_defaultPath != null) {
         final file = File("$_defaultPath/$finalFileName");
-        await file.writeAsBytes(fileBytes, flush: true);
+        await file.writeAsBytes(bytes, flush: true);
         setState(() => _currentOpeningFilePath = file.path);
         _showSnackBar("Đã lưu mới: $finalFileName");
       } else {
         String? selectedFile = await FilePicker.platform.saveFile(
-          dialogTitle: 'Chọn nơi lưu', fileName: finalFileName,
-          type: FileType.custom, allowedExtensions: ['xlsx'],
-          bytes: Uint8List.fromList(fileBytes),
+          dialogTitle: 'Chọn nơi lưu', 
+          fileName: finalFileName,
+          type: FileType.custom, 
+          allowedExtensions: ['xlsx'],
+          bytes: bytes,
         );
-        if (selectedFile != null) _showSnackBar("Lưu thành công!");
+        if (selectedFile != null) {
+          setState(() => _currentOpeningFilePath = selectedFile);
+          _showSnackBar("Lưu thành công!");
+        }
       }
     } catch (e) {
       _showSnackBar("Lỗi: $e");
@@ -116,45 +128,40 @@ class _ExcelAppState extends State<ExcelApp> {
   }
 
   Future<void> _importExcel() async {
-  FilePickerResult? result = await FilePicker.platform.pickFiles(
-    type: FileType.custom,
-    allowedExtensions: ['xlsx'],
-    initialDirectory: _defaultPath,
-  );
-  if (result != null) {
-    String? filePath = result.files.first.path;
-    if (filePath == null) {
-      _showSnackBar("Không thể lấy đường dẫn file.");
-      return;
-    }
-
-    // Lưu đúng đường dẫn gốc để sau này ghi đè
-    setState(() => _currentOpeningFilePath = filePath);
-
-    // Đọc dữ liệu từ file gốc
-    Uint8List bytes = await File(filePath).readAsBytes();
-
-    var excel = ex.Excel.decodeBytes(bytes);
-    for (var table in excel.tables.keys) {
-      setState(() {
-        _controllers.clear();
-        var tableData = excel.tables[table]!;
-        for (int i = 1; i < tableData.rows.length; i++) {
-          var rowData = tableData.rows[i];
-          _controllers.add([
-            TextEditingController(text: rowData[0]?.value?.toString() ?? ""),
-            TextEditingController(text: rowData[1]?.value?.toString() ?? ""),
-            TextEditingController(text: rowData[2]?.value?.toString() ?? ""),
-            TextEditingController(text: rowData[3]?.value?.toString() ?? ""),
-          ]);
+    FilePickerResult? result = await FilePicker.platform.pickFiles(
+      type: FileType.custom, 
+      allowedExtensions: ['xlsx'],
+      initialDirectory: _defaultPath, 
+      withData: true,
+    );
+    
+    if (result != null && result.files.single.path != null) {
+      // Lưu đường dẫn file để có thể ghi đè sau này
+      setState(() => _currentOpeningFilePath = result.files.single.path);
+      
+      Uint8List? bytes = result.files.single.bytes;
+      if (bytes != null) {
+        var excel = ex.Excel.decodeBytes(bytes);
+        for (var table in excel.tables.keys) {
+          setState(() {
+            _controllers.clear();
+            var tableData = excel.tables[table]!;
+            for (int i = 1; i < tableData.rows.length; i++) {
+              var rowData = tableData.rows[i];
+              _controllers.add([
+                TextEditingController(text: rowData[0]?.value?.toString() ?? ""),
+                TextEditingController(text: rowData[1]?.value?.toString() ?? ""),
+                TextEditingController(text: rowData[2]?.value?.toString() ?? ""),
+                TextEditingController(text: rowData[3]?.value?.toString() ?? ""),
+              ]);
+            }
+          });
+          _showSnackBar("Đã mở: ${result.files.single.name}");
+          break;
         }
-      });
-      _showSnackBar("Đã mở: ${result.files.first.name}");
-      break;
+      }
     }
   }
-}
-
 
   void _showSnackBar(String message) {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message), duration: const Duration(seconds: 2)));
@@ -162,12 +169,10 @@ class _ExcelAppState extends State<ExcelApp> {
 
   @override
   Widget build(BuildContext context) {
-    // Kiểm tra xem bàn phím có đang hiện hay không
     bool isKeyboardVisible = MediaQuery.of(context).viewInsets.bottom != 0;
 
     return Scaffold(
       backgroundColor: Colors.white,
-      // Khi bàn phím hiện, giao diện sẽ tự đẩy lên để không che khuất ô nhập
       resizeToAvoidBottomInset: true, 
       appBar: AppBar(
         title: const Text('Edit Excel', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
@@ -217,7 +222,6 @@ class _ExcelAppState extends State<ExcelApp> {
           ),
         ],
       ),
-      // CHỈ HIỆN NÚT THÊM DÒNG KHI BÀN PHÍM ĐÃ ĐÓNG
       floatingActionButton: isKeyboardVisible 
         ? null 
         : FloatingActionButton.extended(
