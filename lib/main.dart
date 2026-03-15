@@ -17,7 +17,7 @@ class ExcelApp extends StatefulWidget {
 class _ExcelAppState extends State<ExcelApp> {
   List<List<TextEditingController>> _controllers = [];
   String? _defaultPath;
-  String? _currentOpeningFileName; // Lưu tên file thay vì full path để tránh lỗi permission
+  String? _currentOpeningFilePath;
 
   @override
   void initState() {
@@ -53,6 +53,7 @@ class _ExcelAppState extends State<ExcelApp> {
       }
 
       var excel = ex.Excel.createExcel();
+      // Xóa sheet mặc định nếu cần hoặc dùng luôn Sheet1
       ex.Sheet sheetObject = excel['Sheet1'];
 
       sheetObject.appendRow([
@@ -67,34 +68,45 @@ class _ExcelAppState extends State<ExcelApp> {
         ]);
       }
 
+      // Quan trọng: Lưu dữ liệu vào biến bytes trước khi ghi file
       final List<int>? fileBytes = excel.save();
       if (fileBytes == null) return;
-      Uint8List bytes = Uint8List.fromList(fileBytes);
+      Uint8List finalBytes = Uint8List.fromList(fileBytes);
 
-      // ƯU TIÊN: Dùng saveFile của FilePicker để ghi đè hợp lệ theo chuẩn Android
-      String? fileNameToSave;
-      
-      if (_currentOpeningFileName != null) {
-        fileNameToSave = _currentOpeningFileName;
-      } else {
-        fileNameToSave = await _showFileNameDialog();
+      // 1. TRƯỜNG HỢP GHI ĐÈ FILE ĐANG MỞ
+      if (_currentOpeningFilePath != null) {
+        final file = File(_currentOpeningFilePath!);
+        if (await file.exists()) {
+          // Ghi đè bằng writeAsBytes với flush: true để đảm bảo dữ liệu xuống ổ đĩa
+          await file.writeAsBytes(finalBytes, mode: FileMode.write, flush: true);
+          _showSnackBar("Đã cập nhật dữ liệu thành công!");
+          return;
+        }
       }
 
-      if (fileNameToSave == null || fileNameToSave.isEmpty) return;
-      if (!fileNameToSave.endsWith('.xlsx')) fileNameToSave += '.xlsx';
+      // 2. TRƯỜNG HỢP LƯU FILE MỚI
+      String? customFileName = await _showFileNameDialog();
+      if (customFileName == null || customFileName.isEmpty) return;
+      String finalFileName = customFileName.endsWith('.xlsx') ? customFileName : "$customFileName.xlsx";
 
-      // Gọi lệnh lưu của hệ thống (Đây là cách chắc chắn nhất để ghi đè thành công)
-      String? resultPath = await FilePicker.platform.saveFile(
-        dialogTitle: 'Đang lưu file...',
-        fileName: fileNameToSave,
-        type: FileType.custom,
-        allowedExtensions: ['xlsx'],
-        bytes: bytes,
-      );
-
-      if (resultPath != null) {
-        setState(() => _currentOpeningFileName = fileNameToSave);
-        _showSnackBar("Lưu thành công!");
+      if (_defaultPath != null) {
+        final file = File("$_defaultPath/$finalFileName");
+        await file.writeAsBytes(finalBytes, flush: true);
+        setState(() => _currentOpeningFilePath = file.path);
+        _showSnackBar("Đã lưu mới: $finalFileName");
+      } else {
+        // Fallback dùng FilePicker nếu chưa cài path mặc định
+        String? selectedFile = await FilePicker.platform.saveFile(
+          dialogTitle: 'Chọn nơi lưu', 
+          fileName: finalFileName,
+          type: FileType.custom, 
+          allowedExtensions: ['xlsx'],
+          bytes: finalBytes,
+        );
+        if (selectedFile != null) {
+          setState(() => _currentOpeningFilePath = selectedFile);
+          _showSnackBar("Lưu thành công!");
+        }
       }
     } catch (e) {
       _showSnackBar("Lỗi: $e");
@@ -120,12 +132,13 @@ class _ExcelAppState extends State<ExcelApp> {
     FilePickerResult? result = await FilePicker.platform.pickFiles(
       type: FileType.custom, 
       allowedExtensions: ['xlsx'],
-      initialDirectory: _defaultPath,
+      initialDirectory: _defaultPath, 
       withData: true,
     );
     
-    if (result != null) {
-      setState(() => _currentOpeningFileName = result.files.single.name);
+    if (result != null && result.files.single.path != null) {
+      // Lưu lại PATH để thực hiện ghi đè chính xác file đó
+      setState(() => _currentOpeningFilePath = result.files.single.path);
       
       Uint8List? bytes = result.files.single.bytes;
       if (bytes != null) {
@@ -134,6 +147,7 @@ class _ExcelAppState extends State<ExcelApp> {
           setState(() {
             _controllers.clear();
             var tableData = excel.tables[table]!;
+            // Bắt đầu từ 1 để bỏ qua tiêu đề
             for (int i = 1; i < tableData.rows.length; i++) {
               var rowData = tableData.rows[i];
               _controllers.add([
@@ -171,7 +185,7 @@ class _ExcelAppState extends State<ExcelApp> {
             icon: const Icon(Icons.note_add, color: Colors.white),
             onPressed: () => setState(() {
               _controllers = [List.generate(4, (_) => TextEditingController())];
-              _currentOpeningFileName = null;
+              _currentOpeningFilePath = null;
               _showSnackBar("Đã tạo trang mới");
             }),
           ),
@@ -184,10 +198,10 @@ class _ExcelAppState extends State<ExcelApp> {
         children: [
           Container(
             width: double.infinity,
-            color: _currentOpeningFileName == null ? Colors.orange[50] : Colors.green[50],
+            color: _currentOpeningFilePath == null ? Colors.orange[50] : Colors.green[50],
             padding: const EdgeInsets.symmetric(vertical: 6),
             child: Text(
-              _currentOpeningFileName == null ? "🆕 Đang tạo file mới" : "📂 Ghi đè: $_currentOpeningFileName",
+              _currentOpeningFilePath == null ? "🆕 Đang tạo file mới" : "📂 Ghi đè: ${_currentOpeningFilePath!.split('/').last}",
               textAlign: TextAlign.center, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)
             ),
           ),
@@ -215,7 +229,7 @@ class _ExcelAppState extends State<ExcelApp> {
         : FloatingActionButton.extended(
             onPressed: _addNewRow,
             backgroundColor: Colors.indigo,
-            label: const Text("Add", style: TextStyle(color: Colors.white)),
+            label: const Text("Thêm dòng", style: TextStyle(color: Colors.white)),
             icon: const Icon(Icons.add, color: Colors.white)
           ),
     );
