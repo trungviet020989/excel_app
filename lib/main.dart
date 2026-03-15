@@ -26,6 +26,7 @@ class _ExcelAppState extends State<ExcelApp> {
   List<List<TextEditingController>> _controllers = [];
   String? _defaultPath;
   String? _currentFileNameOnly;
+  String _searchQuery = ""; // Biến lưu từ khóa tìm kiếm
 
   @override
   void initState() {
@@ -54,17 +55,14 @@ class _ExcelAppState extends State<ExcelApp> {
     setState(() => _controllers.add(List.generate(4, (_) => TextEditingController())));
   }
 
-  // --- CHIA SẺ FILE THEO DANH SÁCH ---
   Future<void> _pickAndShareFile() async {
     if (_defaultPath == null) {
-      _showSnackBar("Vui lòng cài đặt thư mục lưu (icon bánh răng).");
+      _showSnackBar("Vui lòng cài đặt thư mục lưu.");
       return;
     }
     final directory = Directory(_defaultPath!);
-    if (!await directory.exists()) {
-      _showSnackBar("Thư mục không tồn tại.");
-      return;
-    }
+    if (!await directory.exists()) return;
+    
     List<FileSystemEntity> files = directory.listSync()
         .where((file) => file.path.endsWith('.xlsx'))
         .toList();
@@ -86,7 +84,6 @@ class _ExcelAppState extends State<ExcelApp> {
             itemBuilder: (context, index) {
               String fileName = files[index].path.split('/').last;
               return Card(
-                color: Colors.white,
                 child: ListTile(
                   leading: const Icon(Icons.file_present, color: Colors.teal),
                   title: Text(fileName),
@@ -103,7 +100,7 @@ class _ExcelAppState extends State<ExcelApp> {
     );
   }
 
-  // --- LOGIC SAVE AS TĂNG SỐ ---
+  // --- LOGIC LƯU VÀ MỞ FILE ---
   String _suggestNextFileName() {
     if (_currentFileNameOnly == null) return "";
     if (_defaultPath == null) return _currentFileNameOnly!;
@@ -200,18 +197,18 @@ class _ExcelAppState extends State<ExcelApp> {
   Widget build(BuildContext context) {
     bool isKeyboardVisible = MediaQuery.of(context).viewInsets.bottom != 0;
 
+    // Logic lọc danh sách theo tên SP
+    List<List<TextEditingController>> filteredRows = _controllers.where((row) {
+      return row[0].text.toLowerCase().contains(_searchQuery.toLowerCase());
+    }).toList();
+
     return Scaffold(
-      backgroundColor: Colors.blueGrey[50], // Màu nền dịu mắt
+      backgroundColor: Colors.blueGrey[50],
       appBar: AppBar(
         title: const Text('QUẢN LÝ KHO', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
         centerTitle: true,
-        flexibleSpace: Container(
-          decoration: const BoxDecoration(
-            gradient: LinearGradient(colors: [Colors.teal, Colors.green])
-          )
-        ),
+        flexibleSpace: Container(decoration: const BoxDecoration(gradient: LinearGradient(colors: [Colors.teal, Colors.green]))),
         actions: [
-          // NÚT TẠO FILE MỚI ĐÃ ĐƯỢC KHÔI PHỤC
           IconButton(
             icon: const Icon(Icons.note_add, color: Colors.white),
             onPressed: () => setState(() {
@@ -228,29 +225,37 @@ class _ExcelAppState extends State<ExcelApp> {
       ),
       body: Column(
         children: [
+          // 1. Ô TÌM KIẾM SẢN PHẨM
           Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 15),
+            padding: const EdgeInsets.all(10),
             color: Colors.white,
-            child: Row(
-              children: [
-                const Icon(Icons.edit_note, size: 18, color: Colors.teal),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    _currentFileNameOnly == null ? "Tệp mới (Chưa lưu)" : "File: $_currentFileNameOnly.xlsx",
-                    style: const TextStyle(color: Colors.teal, fontWeight: FontWeight.bold, fontSize: 13),
-                  ),
-                ),
-              ],
+            child: TextField(
+              onChanged: (value) => setState(() => _searchQuery = value),
+              decoration: InputDecoration(
+                hintText: "Tìm tên sản phẩm...",
+                prefixIcon: const Icon(Icons.search, color: Colors.teal),
+                contentPadding: const EdgeInsets.symmetric(vertical: 0),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(25), borderSide: BorderSide.none),
+                filled: true,
+                fillColor: Colors.blueGrey[50],
+              ),
             ),
           ),
+          // 2. HIỂN THỊ TÊN FILE
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(vertical: 5, horizontal: 15),
+            child: Text(
+              _currentFileNameOnly == null ? "🆕 Tệp mới" : "📂 File: $_currentFileNameOnly.xlsx",
+              style: const TextStyle(color: Colors.blueGrey, fontSize: 11, fontWeight: FontWeight.bold),
+            ),
+          ),
+          // 3. BẢNG DỮ LIỆU
           Expanded(
             child: SingleChildScrollView(
-              padding: const EdgeInsets.all(10),
+              padding: const EdgeInsets.symmetric(horizontal: 10),
               child: Card(
                 elevation: 2,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                 child: Table(
                   columnWidths: const {0: FlexColumnWidth(2), 1: FlexColumnWidth(1.2), 2: FlexColumnWidth(1.2), 3: FlexColumnWidth(0.8)},
                   border: TableBorder.all(color: Colors.teal.shade50),
@@ -262,7 +267,7 @@ class _ExcelAppState extends State<ExcelApp> {
                         child: Text(t, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12))
                       )).toList(),
                     ),
-                    ..._controllers.map((row) => TableRow(
+                    ...filteredRows.map((row) => TableRow(
                       children: [
                         _buildTableCell(row[0], TextInputType.text),
                         _buildTableCell(row[1], TextInputType.number),
@@ -290,14 +295,10 @@ class _ExcelAppState extends State<ExcelApp> {
       padding: const EdgeInsets.symmetric(horizontal: 5),
       child: TextField(
         controller: controller,
-        keyboardType: keyboardType, // Tự động hiện bàn phím số cho các cột liên quan
+        keyboardType: keyboardType,
         style: const TextStyle(fontSize: 14),
         textAlign: keyboardType == TextInputType.number ? TextAlign.center : TextAlign.left,
-        decoration: const InputDecoration(
-          border: InputBorder.none,
-          hintText: "...",
-          contentPadding: EdgeInsets.symmetric(vertical: 10)
-        ),
+        decoration: const InputDecoration(border: InputBorder.none, hintText: "...", contentPadding: EdgeInsets.symmetric(vertical: 10)),
       ),
     );
   }
