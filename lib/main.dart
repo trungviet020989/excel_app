@@ -17,7 +17,7 @@ class ExcelApp extends StatefulWidget {
 class _ExcelAppState extends State<ExcelApp> {
   List<List<TextEditingController>> _controllers = [];
   String? _defaultPath;
-  String? _currentFileNameOnly; // Lưu tên file hiện tại (không đuôi, không path)
+  String? _currentFileNameOnly;
 
   @override
   void initState() {
@@ -46,20 +46,16 @@ class _ExcelAppState extends State<ExcelApp> {
     setState(() => _controllers.add(List.generate(4, (_) => TextEditingController())));
   }
 
-  // Hàm tìm tên file gợi ý (Chỉ dùng khi lưu đè/lưu mới từ file cũ)
   String _suggestNextFileName() {
-    // Nếu là file mới tạo (chưa có tên gốc), trả về chuỗi rỗng để người dùng tự nhập
     if (_currentFileNameOnly == null) return "";
     if (_defaultPath == null) return _currentFileNameOnly!;
     
     String baseName = _currentFileNameOnly!;
-    // Tách phần chữ và phần số ở cuối (ví dụ: danhsach12 -> gốc là danhsach)
     RegExp regExp = RegExp(r"^(.*?)(\d*)$");
     var match = regExp.firstMatch(baseName);
     String rootName = match?.group(1) ?? baseName;
 
     int counter = 1;
-    // Nếu gốc tên đã có số, thử bắt đầu từ số đó + 1
     String lastDigits = match?.group(2) ?? "";
     if (lastDigits.isNotEmpty) {
       counter = int.parse(lastDigits) + 1;
@@ -99,7 +95,6 @@ class _ExcelAppState extends State<ExcelApp> {
       if (fileBytes == null) return;
       Uint8List bytes = Uint8List.fromList(fileBytes);
 
-      // Lấy tên gợi ý: Rỗng nếu là file mới, có số thứ tự nếu là file cũ
       String suggestion = _suggestNextFileName();
       String? customFileName = await _showFileNameDialog(suggestion);
       
@@ -109,8 +104,6 @@ class _ExcelAppState extends State<ExcelApp> {
       if (_defaultPath != null) {
         final file = File("$_defaultPath/$finalFileName");
         await file.writeAsBytes(bytes, flush: true);
-        
-        // Lưu lại tên vừa đặt để lần sau nhấn Save tiếp nó sẽ gợi ý số tiếp theo
         setState(() => _currentFileNameOnly = customFileName.replaceAll('.xlsx', ''));
         _showSnackBar("Đã lưu: $finalFileName");
       } else {
@@ -159,10 +152,7 @@ class _ExcelAppState extends State<ExcelApp> {
     
     if (result != null) {
       String fileName = result.files.single.name;
-      setState(() {
-        // Lấy tên file bỏ đuôi .xlsx
-        _currentFileNameOnly = fileName.split('.').first;
-      });
+      setState(() => _currentFileNameOnly = fileName.split('.').first);
       
       Uint8List? bytes = result.files.single.bytes;
       if (bytes != null) {
@@ -205,7 +195,7 @@ class _ExcelAppState extends State<ExcelApp> {
             icon: const Icon(Icons.note_add, color: Colors.white),
             onPressed: () => setState(() {
               _controllers = [List.generate(4, (_) => TextEditingController())];
-              _currentFileNameOnly = null; // Reset để trở thành file mới
+              _currentFileNameOnly = null;
               _showSnackBar("Trang mới");
             }),
           ),
@@ -239,7 +229,12 @@ class _ExcelAppState extends State<ExcelApp> {
                     children: ['Tên SP', 'Giá Bán', 'Giá Nhập', 'SL'].map((t) => Padding(padding: const EdgeInsets.all(10), child: Text(t, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13)))).toList(),
                   ),
                   ..._controllers.map((row) => TableRow(
-                    children: row.map((c) => Padding(padding: const EdgeInsets.symmetric(horizontal: 4), child: TextField(controller: c, style: const TextStyle(fontSize: 14), decoration: const InputDecoration(border: InputBorder.none, hintText: "...")))).toList(),
+                    children: [
+                      _buildTableCell(row[0], TextInputType.text),
+                      _buildTableCell(row[1], TextInputType.number),
+                      _buildTableCell(row[2], TextInputType.number),
+                      _buildTableCell(row[3], TextInputType.number),
+                    ],
                   )),
                 ],
               ),
@@ -247,14 +242,29 @@ class _ExcelAppState extends State<ExcelApp> {
           ),
         ],
       ),
+      // THAY ĐỔI TẠI ĐÂY: Nút thêm dòng gọn nhẹ chỉ có dấu +
       floatingActionButton: isKeyboardVisible 
         ? null 
-        : FloatingActionButton.extended(
+        : FloatingActionButton(
             onPressed: _addNewRow,
             backgroundColor: Colors.indigo,
-            label: const Text("Thêm 1 dòng", style: TextStyle(color: Colors.white)),
-            icon: const Icon(Icons.add, color: Colors.white)
+            child: const Icon(Icons.add, color: Colors.white),
           ),
+    );
+  }
+
+  Widget _buildTableCell(TextEditingController controller, TextInputType keyboardType) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+      child: TextField(
+        controller: controller,
+        keyboardType: keyboardType,
+        style: const TextStyle(fontSize: 14),
+        decoration: const InputDecoration(
+          border: InputBorder.none,
+          hintText: "...",
+        ),
+      ),
     );
   }
 }
