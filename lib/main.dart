@@ -252,7 +252,7 @@ class _ExcelAppState extends State<ExcelApp> {
         : FloatingActionButton.extended(
             onPressed: _addNewRow,
             backgroundColor: Colors.indigo,
-            label: const Text("Thêm dòng", style: TextStyle(color: Colors.white)),
+            label: const Text("Thêm 1 dòng", style: TextStyle(color: Colors.white)),
             icon: const Icon(Icons.add, color: Colors.white)
           ),
     );
