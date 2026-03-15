@@ -11,8 +11,8 @@ void main() => runApp(MaterialApp(
       home: const ExcelApp(),
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
-        primarySwatch: Colors.deepOrange,
-        useMaterial3: true, // Sử dụng giao diện hiện đại hơn
+        primarySwatch: Colors.teal,
+        useMaterial3: true,
       ),
     ));
 
@@ -54,9 +54,10 @@ class _ExcelAppState extends State<ExcelApp> {
     setState(() => _controllers.add(List.generate(4, (_) => TextEditingController())));
   }
 
+  // --- CHIA SẺ FILE THEO DANH SÁCH ---
   Future<void> _pickAndShareFile() async {
     if (_defaultPath == null) {
-      _showSnackBar("Vui lòng cài đặt thư mục mặc định trước.");
+      _showSnackBar("Vui lòng cài đặt thư mục lưu (icon bánh răng).");
       return;
     }
     final directory = Directory(_defaultPath!);
@@ -69,14 +70,14 @@ class _ExcelAppState extends State<ExcelApp> {
         .toList();
 
     if (files.isEmpty) {
-      _showSnackBar("Không tìm thấy file Excel nào.");
+      _showSnackBar("Không tìm thấy file nào.");
       return;
     }
 
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text("Gửi file sản phẩm", style: TextStyle(color: Colors.deepOrange, fontWeight: FontWeight.bold)),
+        title: const Text("Chọn file gửi đi", style: TextStyle(color: Colors.teal, fontWeight: FontWeight.bold)),
         content: SizedBox(
           width: double.maxFinite,
           child: ListView.builder(
@@ -84,11 +85,11 @@ class _ExcelAppState extends State<ExcelApp> {
             itemCount: files.length,
             itemBuilder: (context, index) {
               String fileName = files[index].path.split('/').last;
-              return Card( // Làm các mục trong danh sách nổi lên
-                elevation: 2,
+              return Card(
+                color: Colors.white,
                 child: ListTile(
-                  leading: const Icon(Icons.description, color: Colors.orange),
-                  title: Text(fileName, style: const TextStyle(fontSize: 14)),
+                  leading: const Icon(Icons.file_present, color: Colors.teal),
+                  title: Text(fileName),
                   onTap: () async {
                     Navigator.pop(context);
                     await Share.shareXFiles([XFile(files[index].path)]);
@@ -102,6 +103,7 @@ class _ExcelAppState extends State<ExcelApp> {
     );
   }
 
+  // --- LOGIC SAVE AS TĂNG SỐ ---
   String _suggestNextFileName() {
     if (_currentFileNameOnly == null) return "";
     if (_defaultPath == null) return _currentFileNameOnly!;
@@ -191,7 +193,7 @@ class _ExcelAppState extends State<ExcelApp> {
   }
 
   void _showSnackBar(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message), backgroundColor: Colors.deepOrange));
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message), backgroundColor: Colors.teal));
   }
 
   @override
@@ -199,16 +201,25 @@ class _ExcelAppState extends State<ExcelApp> {
     bool isKeyboardVisible = MediaQuery.of(context).viewInsets.bottom != 0;
 
     return Scaffold(
-      backgroundColor: Colors.orange[50], // Màu nền app cam nhạt cực kỳ tươi
+      backgroundColor: Colors.blueGrey[50], // Màu nền dịu mắt
       appBar: AppBar(
-        title: const Text('QUẢN LÝ KHO', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold, letterSpacing: 1.2)),
+        title: const Text('QUẢN LÝ KHO', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
         centerTitle: true,
         flexibleSpace: Container(
           decoration: const BoxDecoration(
-            gradient: LinearGradient(colors: [Colors.orange, Colors.deepOrange]) // Hiệu ứng Gradient cam
+            gradient: LinearGradient(colors: [Colors.teal, Colors.green])
           )
         ),
         actions: [
+          // NÚT TẠO FILE MỚI ĐÃ ĐƯỢC KHÔI PHỤC
+          IconButton(
+            icon: const Icon(Icons.note_add, color: Colors.white),
+            onPressed: () => setState(() {
+              _controllers = [List.generate(4, (_) => TextEditingController())];
+              _currentFileNameOnly = null;
+              _showSnackBar("Đã tạo trang mới");
+            }),
+          ),
           IconButton(icon: const Icon(Icons.share, color: Colors.white), onPressed: _pickAndShareFile),
           IconButton(icon: const Icon(Icons.settings, color: Colors.white), onPressed: _settingsPath),
           IconButton(icon: const Icon(Icons.file_open, color: Colors.white), onPressed: _importExcel),
@@ -217,22 +228,18 @@ class _ExcelAppState extends State<ExcelApp> {
       ),
       body: Column(
         children: [
-          // Thanh hiển thị tên file đẹp hơn
           Container(
             width: double.infinity,
-            padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 15),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 4, offset: const Offset(0, 2))]
-            ),
+            padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 15),
+            color: Colors.white,
             child: Row(
               children: [
-                const Icon(Icons.folder_open, size: 18, color: Colors.orange),
+                const Icon(Icons.edit_note, size: 18, color: Colors.teal),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
-                    _currentFileNameOnly == null ? "Đang tạo file mới..." : "File hiện tại: $_currentFileNameOnly.xlsx",
-                    style: TextStyle(color: Colors.orange[800], fontWeight: FontWeight.w600, fontSize: 13),
+                    _currentFileNameOnly == null ? "Tệp mới (Chưa lưu)" : "File: $_currentFileNameOnly.xlsx",
+                    style: const TextStyle(color: Colors.teal, fontWeight: FontWeight.bold, fontSize: 13),
                   ),
                 ),
               ],
@@ -241,37 +248,29 @@ class _ExcelAppState extends State<ExcelApp> {
           Expanded(
             child: SingleChildScrollView(
               padding: const EdgeInsets.all(10),
-              child: Card( // Bọc bảng vào Card để tạo hiệu ứng nổi
-                elevation: 3,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(10),
-                  child: Table(
-                    columnWidths: const {
-                      0: FlexColumnWidth(2.5), // Tên SP rộng hơn chút
-                      1: FlexColumnWidth(1.5),
-                      2: FlexColumnWidth(1.5),
-                      3: FlexColumnWidth(1),
-                    },
-                    border: TableBorder.all(color: Colors.orange.shade100, width: 0.5),
-                    children: [
-                      TableRow(
-                        decoration: const BoxDecoration(color: Colors.orange),
-                        children: ['Tên SP', 'Giá Bán', 'Giá Nhập', 'SL'].map((t) => Padding(
-                          padding: const EdgeInsets.all(12), 
-                          child: Text(t, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12))
-                        )).toList(),
-                      ),
-                      ..._controllers.map((row) => TableRow(
-                        children: [
-                          _buildTableCell(row[0], TextInputType.text),
-                          _buildTableCell(row[1], TextInputType.number),
-                          _buildTableCell(row[2], TextInputType.number),
-                          _buildTableCell(row[3], TextInputType.number),
-                        ],
-                      )),
-                    ],
-                  ),
+              child: Card(
+                elevation: 2,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                child: Table(
+                  columnWidths: const {0: FlexColumnWidth(2), 1: FlexColumnWidth(1.2), 2: FlexColumnWidth(1.2), 3: FlexColumnWidth(0.8)},
+                  border: TableBorder.all(color: Colors.teal.shade50),
+                  children: [
+                    TableRow(
+                      decoration: const BoxDecoration(color: Colors.teal),
+                      children: ['Tên SP', 'Giá Bán', 'Giá Nhập', 'SL'].map((t) => Padding(
+                        padding: const EdgeInsets.all(10), 
+                        child: Text(t, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12))
+                      )).toList(),
+                    ),
+                    ..._controllers.map((row) => TableRow(
+                      children: [
+                        _buildTableCell(row[0], TextInputType.text),
+                        _buildTableCell(row[1], TextInputType.number),
+                        _buildTableCell(row[2], TextInputType.number),
+                        _buildTableCell(row[3], TextInputType.number),
+                      ],
+                    )),
+                  ],
                 ),
               ),
             ),
@@ -280,9 +279,8 @@ class _ExcelAppState extends State<ExcelApp> {
       ),
       floatingActionButton: isKeyboardVisible ? null : FloatingActionButton(
         onPressed: _addNewRow,
-        backgroundColor: Colors.deepOrange,
-        elevation: 6,
-        child: const Icon(Icons.add, color: Colors.white, size: 30),
+        backgroundColor: Colors.teal,
+        child: const Icon(Icons.add, color: Colors.white),
       ),
     );
   }
@@ -292,14 +290,13 @@ class _ExcelAppState extends State<ExcelApp> {
       padding: const EdgeInsets.symmetric(horizontal: 5),
       child: TextField(
         controller: controller,
-        keyboardType: keyboardType,
+        keyboardType: keyboardType, // Tự động hiện bàn phím số cho các cột liên quan
         style: const TextStyle(fontSize: 14),
         textAlign: keyboardType == TextInputType.number ? TextAlign.center : TextAlign.left,
         decoration: const InputDecoration(
           border: InputBorder.none,
           hintText: "...",
-          hintStyle: TextStyle(color: Colors.grey),
-          contentPadding: EdgeInsets.symmetric(vertical: 12)
+          contentPadding: EdgeInsets.symmetric(vertical: 10)
         ),
       ),
     );
