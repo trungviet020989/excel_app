@@ -120,26 +120,19 @@ class _ExcelAppState extends State<ExcelApp> {
     type: FileType.custom,
     allowedExtensions: ['xlsx'],
     initialDirectory: _defaultPath,
-    withData: true,
   );
   if (result != null) {
-    // Lấy đường dẫn file thực tế
     String? filePath = result.files.first.path;
     if (filePath == null) {
       _showSnackBar("Không thể lấy đường dẫn file.");
       return;
     }
 
-    // Lưu lại đường dẫn để sau này ghi đè
+    // Lưu đúng đường dẫn gốc để sau này ghi đè
     setState(() => _currentOpeningFilePath = filePath);
 
-    // Đọc dữ liệu từ bytes hoặc từ file path
-    Uint8List bytes;
-    if (result.files.first.bytes != null) {
-      bytes = result.files.first.bytes!;
-    } else {
-      bytes = await File(filePath).readAsBytes();
-    }
+    // Đọc dữ liệu từ file gốc
+    Uint8List bytes = await File(filePath).readAsBytes();
 
     var excel = ex.Excel.decodeBytes(bytes);
     for (var table in excel.tables.keys) {
@@ -161,7 +154,6 @@ class _ExcelAppState extends State<ExcelApp> {
     }
   }
 }
-
 
 
   void _showSnackBar(String message) {
