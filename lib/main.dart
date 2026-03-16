@@ -8,6 +8,7 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:share_plus/share_plus.dart';
 
 void main() => runApp(MaterialApp(
+      title: 'Quản Lý Kho',
       home: const ExcelApp(),
       debugShowCheckedModeBanner: false,
       theme: ThemeData(primarySwatch: Colors.teal, useMaterial3: true),
@@ -21,9 +22,7 @@ class ExcelApp extends StatefulWidget {
 
 class _ExcelAppState extends State<ExcelApp> {
   List<List<TextEditingController>> _controllers = [];
-  // Controller cho dòng nhập liệu cố định ở trên
   final List<TextEditingController> _topInputCtrls = List.generate(4, (_) => TextEditingController());
-  
   String? _defaultPath;
   String? _currentFileNameOnly;
   String _searchQuery = "";
@@ -38,27 +37,36 @@ class _ExcelAppState extends State<ExcelApp> {
   @override
   void dispose() {
     _scrollController.dispose();
-    for (var ctrl in _topInputCtrls) {
-      ctrl.dispose();
-    }
+    for (var ctrl in _topInputCtrls) ctrl.dispose();
     for (var row in _controllers) {
-      for (var ctrl in row) {
-        ctrl.dispose();
-      }
+      for (var ctrl in row) ctrl.dispose();
     }
     super.dispose();
   }
 
-  // Lấy đường dẫn lưu file
+  // 1. CÀI ĐẶT THƯ MỤC
   Future<void> _loadDefaultPath() async {
     final prefs = await SharedPreferences.getInstance();
     setState(() => _defaultPath = prefs.getString('default_path'));
   }
 
-  // Thêm dòng mới từ thanh nhập liệu cố định
+  Future<void> _settingsPath() async {
+    await [Permission.storage, Permission.manageExternalStorage].request();
+    String? selectedDirectory = await FilePicker.platform.getDirectoryPath();
+    if (selectedDirectory != null) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('default_path', selectedDirectory);
+      setState(() => _defaultPath = selectedDirectory);
+      _showSnackBar("Đã cài đặt thư mục lưu.");
+    }
+  }
+
+  // 2. THÊM DÒNG MỚI TỪ THANH CỐ ĐỊNH
   void _addFromTop() {
-    // Nếu cả 4 ô đều trống thì không thêm
-    if (_topInputCtrls.every((c) => c.text.isEmpty)) return;
+    if (_topInputCtrls[0].text.isEmpty) {
+      _showSnackBar("Vui lòng nhập tên sản phẩm");
+      return;
+    }
 
     final newRow = [
       TextEditingController(text: _topInputCtrls[0].text),
@@ -69,13 +77,11 @@ class _ExcelAppState extends State<ExcelApp> {
 
     setState(() {
       _controllers.add(newRow);
-      // Xóa sạch dòng nhập phía trên để chuẩn bị cho sản phẩm tiếp theo
-      for (var ctrl in _topInputCtrls) {
-        ctrl.clear();
-      }
+      for (var ctrl in _topInputCtrls) ctrl.clear();
     });
 
-    // Cuộn xuống dòng cuối cùng vừa thêm
+    FocusScope.of(context).unfocus();
+
     Future.microtask(() {
       if (_scrollController.hasClients) {
         _scrollController.animateTo(
@@ -87,7 +93,6 @@ class _ExcelAppState extends State<ExcelApp> {
     });
   }
 
-  // Xóa một dòng bất kỳ
   void _removeRow(int index) {
     setState(() {
       _controllers[index].forEach((c) => c.dispose());
@@ -95,32 +100,125 @@ class _ExcelAppState extends State<ExcelApp> {
     });
   }
 
-  // --- CÁC HÀM XỬ LÝ FILE (GIỮ NGUYÊN) ---
+  // 3. LƯU FILE EXCEL
   Future<void> _exportExcel() async {
     try {
+      if (_defaultPath == null) {
+        _showSnackBar("Vui lòng cài đặt thư mục lưu trong Settings.");
+        return;
+      }
       if (Platform.isAndroid) await [Permission.storage, Permission.manageExternalStorage].request();
+      
       var excel = ex.Excel.createExcel();
       ex.Sheet sheetObject = excel['Sheet1'];
       sheetObject.appendRow([ex.TextCellValue('Tên SP'), ex.TextCellValue('Giá Bán'), ex.TextCellValue('Giá Nhập'), ex.TextCellValue('SL')]);
+      
       for (var row in _controllers) {
-        sheetObject.appendRow([ex.TextCellValue(row[0].text), ex.TextCellValue(row[1].text), ex.TextCellValue(row[2].text), ex.TextCellValue(row[3].text)]);
+        sheetObject.appendRow([
+          ex.TextCellValue(row[0].text),
+          ex.TextCellValue(row[1].text),
+          ex.TextCellValue(row[2].text),
+          ex.TextCellValue(row[3].text)
+        ]);
       }
+
       final List<int>? fileBytes = excel.save();
       if (fileBytes == null) return;
-      Uint8List bytes = Uint8List.fromList(fileBytes);
-
-      String suggestion = _suggestNextFileName();
-      String? customFileName = await _showFileNameDialog(suggestion);
-      if (customFileName == null || customFileName.isEmpty) return;
       
-      final file = File("$_defaultPath/${customFileName.endsWith('.xlsx') ? customFileName : '$customFileName.xlsx'}");
-      await file.writeAsBytes(bytes, flush: true);
-      setState(() => _currentFileNameOnly = customFileName.replaceAll('.xlsx', ''));
+      String suggestion = _currentFileNameOnly ?? "San_pham_moi";
+      String? customName = await _showFileNameDialog(suggestion);
+      if (customName == null || customName.isEmpty) return;
+      
+      final file = File("$_defaultPath/$customName.xlsx");
+      await file.writeAsBytes(Uint8List.fromList(fileBytes), flush: true);
+      setState(() => _currentFileNameOnly = customName);
       _showSnackBar("Đã lưu thành công!");
-    } catch (e) { _showSnackBar("Lỗi lưu file: $e"); }
+    } catch (e) { _showSnackBar("Lỗi: $e"); }
   }
 
-  // --- GIAO DIỆN ---
+  // 4. MỞ FILE EXCEL
+  Future<void> _importExcel() async {
+    try {
+      FilePickerResult? result = await FilePicker.platform.pickFiles(
+        type: FileType.custom, 
+        allowedExtensions: ['xlsx'],
+        withData: true
+      );
+      if (result != null) {
+        String fileName = result.files.single.name;
+        setState(() => _currentFileNameOnly = fileName.split('.').first);
+        Uint8List? bytes = result.files.single.bytes;
+        if (bytes != null) {
+          var excel = ex.Excel.decodeBytes(bytes);
+          for (var table in excel.tables.keys) {
+            setState(() {
+              _controllers.clear();
+              var tableData = excel.tables[table]!;
+              for (int i = 1; i < tableData.rows.length; i++) {
+                var rowData = tableData.rows[i];
+                _controllers.add([
+                  TextEditingController(text: rowData[0]?.value?.toString() ?? ""),
+                  TextEditingController(text: rowData[1]?.value?.toString() ?? ""),
+                  TextEditingController(text: rowData[2]?.value?.toString() ?? ""),
+                  TextEditingController(text: rowData[3]?.value?.toString() ?? ""),
+                ]);
+              }
+            });
+            break;
+          }
+          _showSnackBar("Đã nhập dữ liệu từ $fileName");
+        }
+      }
+    } catch (e) { _showSnackBar("Lỗi khi mở file: $e"); }
+  }
+
+  // 5. CHIA SẺ FILE
+  Future<void> _pickAndShareFile() async {
+    if (_defaultPath == null) {
+      _showSnackBar("Vui lòng cài đặt thư mục lưu.");
+      return;
+    }
+    final directory = Directory(_defaultPath!);
+    if (!await directory.exists()) return;
+    
+    List<FileSystemEntity> files = directory.listSync()
+        .where((file) => file.path.endsWith('.xlsx'))
+        .toList();
+
+    if (files.isEmpty) {
+      _showSnackBar("Không tìm thấy file nào.");
+      return;
+    }
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text("Chọn file gửi đi", style: TextStyle(color: Colors.teal, fontWeight: FontWeight.bold)),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: ListView.builder(
+            shrinkWrap: true,
+            itemCount: files.length,
+            itemBuilder: (context, index) {
+              String fileName = files[index].path.split('/').last;
+              return Card(
+                child: ListTile(
+                  leading: const Icon(Icons.file_present, color: Colors.teal),
+                  title: Text(fileName),
+                  onTap: () async {
+                    Navigator.pop(context);
+                    await Share.shareXFiles([XFile(files[index].path)]);
+                  },
+                ),
+              );
+            },
+          ),
+        ),
+      ),
+    );
+  }
+
+  // 6. GIAO DIỆN
   @override
   Widget build(BuildContext context) {
     List<List<TextEditingController>> filteredRows = _controllers.where((row) {
@@ -142,66 +240,52 @@ class _ExcelAppState extends State<ExcelApp> {
       ),
       body: Column(
         children: [
-          // 1. THANH TÌM KIẾM
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-            color: Colors.white,
+          Padding(
+            padding: const EdgeInsets.all(8.0),
             child: TextField(
               onChanged: (v) => setState(() => _searchQuery = v),
               decoration: InputDecoration(
-                hintText: "Tìm tên sản phẩm...",
-                prefixIcon: const Icon(Icons.search, size: 20),
-                filled: true,
-                fillColor: Colors.grey[100],
+                hintText: "Tìm sản phẩm...",
+                prefixIcon: const Icon(Icons.search),
+                filled: true, fillColor: Colors.white,
                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
                 contentPadding: EdgeInsets.zero,
               ),
             ),
           ),
-
-          // 2. DÒNG NHẬP LIỆU CỐ ĐỊNH (STICKY INPUT)
           Container(
-            color: Colors.orange[50],
-            padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 5),
+            color: Colors.orange[100],
+            padding: const EdgeInsets.all(8),
             child: Row(
               children: [
-                _buildInputCell(_topInputCtrls[0], "Tên SP", flex: 20),
-                _buildInputCell(_topInputCtrls[1], "Bán", flex: 12, isNum: true),
-                _buildInputCell(_topInputCtrls[2], "Nhập", flex: 12, isNum: true),
-                _buildInputCell(_topInputCtrls[3], "SL", flex: 8, isNum: true),
-                IconButton(
-                  icon: const Icon(Icons.add_circle, color: Colors.orange, size: 30),
-                  onPressed: _addFromTop,
-                )
+                _buildInput(_topInputCtrls[0], "Tên SP", 3),
+                _buildInput(_topInputCtrls[1], "Bán", 2, isNum: true),
+                _buildInput(_topInputCtrls[2], "Nhập", 2, isNum: true),
+                _buildInput(_topInputCtrls[3], "SL", 1, isNum: true),
+                IconButton(icon: const Icon(Icons.add_circle, color: Colors.orange, size: 35), onPressed: _addFromTop),
               ],
             ),
           ),
-
-          // 3. DANH SÁCH DỮ LIỆU
           Expanded(
             child: Scrollbar(
               controller: _scrollController,
-              thumbVisibility: true, // Luôn hiện thanh cuộn bên phải
-              thickness: 8,
-              radius: const Radius.circular(10),
+              thumbVisibility: true,
+              thickness: 7,
               child: ListView.builder(
                 controller: _scrollController,
-                padding: const EdgeInsets.all(10),
                 itemCount: filteredRows.length,
-                itemExtent: 50, // Cố định chiều cao dòng để mượt tuyệt đối
+                itemExtent: 55,
                 itemBuilder: (context, index) {
                   return Card(
-                    margin: const EdgeInsets.only(bottom: 2),
-                    elevation: 0,
-                    shape: RoundedRectangleBorder(side: BorderSide(color: Colors.grey[200]!)),
+                    margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                     child: Row(
                       children: [
-                        _buildDataCell(filteredRows[index][0], flex: 20),
-                        _buildDataCell(filteredRows[index][1], flex: 12, isNum: true),
-                        _buildDataCell(filteredRows[index][2], flex: 12, isNum: true),
-                        _buildDataCell(filteredRows[index][3], flex: 8, isNum: true),
+                        _buildCell(filteredRows[index][0], 3),
+                        _buildCell(filteredRows[index][1], 2, isNum: true),
+                        _buildCell(filteredRows[index][2], 2, isNum: true),
+                        _buildCell(filteredRows[index][3], 1, isNum: true),
                         IconButton(
-                          icon: const Icon(Icons.delete_outline, color: Colors.redAccent, size: 20),
+                          icon: const Icon(Icons.delete, color: Colors.redAccent, size: 20),
                           onPressed: () => _removeRow(_controllers.indexOf(filteredRows[index])),
                         )
                       ],
@@ -216,49 +300,23 @@ class _ExcelAppState extends State<ExcelApp> {
     );
   }
 
-  // Ô nhập cho dòng cố định
-  Widget _buildInputCell(TextEditingController ctrl, String hint, {required int flex, bool isNum = false}) {
-    return Expanded(
-      flex: flex,
-      child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 2),
-        padding: const EdgeInsets.symmetric(horizontal: 4),
-        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(5)),
-        child: TextField(
-          controller: ctrl,
-          keyboardType: isNum ? TextInputType.number : TextInputType.text,
-          style: const TextStyle(fontSize: 13),
-          decoration: InputDecoration(hintText: hint, border: InputBorder.none, hintStyle: const TextStyle(fontSize: 11)),
-        ),
+  Widget _buildInput(TextEditingController c, String h, int f, {bool isNum = false}) => Expanded(flex: f, child: Padding(padding: const EdgeInsets.symmetric(horizontal: 2), child: TextField(controller: c, keyboardType: isNum ? TextInputType.number : TextInputType.text, decoration: InputDecoration(hintText: h, filled: true, fillColor: Colors.white, border: OutlineInputBorder(borderRadius: BorderRadius.circular(5), borderSide: BorderSide.none), contentPadding: const EdgeInsets.symmetric(horizontal: 5)))));
+  Widget _buildCell(TextEditingController c, int f, {bool isNum = false}) => Expanded(flex: f, child: TextField(controller: c, keyboardType: isNum ? TextInputType.number : TextInputType.text, textAlign: isNum ? TextAlign.center : TextAlign.left, style: const TextStyle(fontSize: 13), decoration: const InputDecoration(border: InputBorder.none, contentPadding: EdgeInsets.symmetric(horizontal: 5))));
+  
+  void _showSnackBar(String m) => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m)));
+
+  Future<String?> _showFileNameDialog(String initialName) async {
+    TextEditingController _nameCtrl = TextEditingController(text: initialName);
+    return showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text("Lưu file Excel"),
+        content: TextField(controller: _nameCtrl, decoration: const InputDecoration(suffixText: ".xlsx"), autofocus: true),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text("Hủy")),
+          ElevatedButton(onPressed: () => Navigator.pop(context, _nameCtrl.text), child: const Text("Xác nhận")),
+        ],
       ),
     );
-  }
-
-  // Ô hiển thị dữ liệu trong danh sách
-  Widget _buildDataCell(TextEditingController ctrl, {required int flex, bool isNum = false}) {
-    return Expanded(
-      flex: flex,
-      child: TextField(
-        controller: ctrl,
-        keyboardType: isNum ? TextInputType.number : TextInputType.text,
-        textAlign: isNum ? TextAlign.center : TextAlign.left,
-        style: const TextStyle(fontSize: 13),
-        decoration: const InputDecoration(border: InputBorder.none, contentPadding: EdgeInsets.symmetric(horizontal: 5)),
-      ),
-    );
-  }
-
-  // --- CÁC HÀM TIỆN ÍCH KHÁC ---
-  String _suggestNextFileName() { /* ... như cũ ... */ return "Sản phẩm"; }
-  Future<void> _pickAndShareFile() async { /* ... như cũ ... */ }
-  Future<void> _settingsPath() async { /* ... như cũ ... */ }
-  Future<void> _importExcel() async { /* ... như cũ ... */ }
-  void _showSnackBar(String msg) { ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg))); }
-  Future<String?> _showFileNameDialog(String initialName) async { 
-    TextEditingController c = TextEditingController(text: initialName);
-    return showDialog<String>(context: context, builder: (ctx) => AlertDialog(
-      title: const Text("Lưu file"), content: TextField(controller: c),
-      actions: [TextButton(onPressed: () => Navigator.pop(ctx, c.text), child: const Text("Lưu"))],
-    ));
   }
 }
