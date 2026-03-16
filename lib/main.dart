@@ -27,12 +27,21 @@ class _ExcelAppState extends State<ExcelApp> {
   String? _defaultPath;
   String? _currentFileNameOnly;
   String _searchQuery = "";
+  // Khai báo ScrollController để điều khiển vị trí cuộn
+  final ScrollController _scrollController = ScrollController();
 
   @override
   void initState() {
     super.initState();
     _addNewRow();
     _loadDefaultPath();
+  }
+
+  // Giải phóng bộ nhớ khi không dùng controller nữa
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadDefaultPath() async {
@@ -51,8 +60,22 @@ class _ExcelAppState extends State<ExcelApp> {
     }
   }
 
+  // CẬP NHẬT: Thêm dòng và tự động cuộn xuống dưới cùng
   void _addNewRow() {
-    setState(() => _controllers.add(List.generate(4, (_) => TextEditingController())));
+    setState(() {
+      _controllers.add(List.generate(4, (_) => TextEditingController()));
+    });
+    
+    // Đợi một chút để dòng mới kịp vẽ xong rồi mới cuộn
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scrollController.hasClients) {
+        _scrollController.animateTo(
+          _scrollController.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 300), // Thời gian lướt 0.3 giây
+          curve: Curves.easeOut, // Hiệu ứng lướt mượt mà
+        );
+      }
+    });
   }
 
   Future<void> _pickAndShareFile() async {
@@ -246,11 +269,9 @@ class _ExcelAppState extends State<ExcelApp> {
               style: const TextStyle(color: Colors.blueGrey, fontSize: 11, fontWeight: FontWeight.bold),
             ),
           ),
-          // SỬ DỤNG LISTVIEW ĐỂ TỐI ƯU TỐC ĐỘ
           Expanded(
             child: Column(
               children: [
-                // Header cố định
                 Container(
                   color: Colors.teal,
                   margin: const EdgeInsets.symmetric(horizontal: 10),
@@ -264,13 +285,13 @@ class _ExcelAppState extends State<ExcelApp> {
                     ],
                   ),
                 ),
-                // Danh sách dòng dữ liệu nạp theo kiểu Lazy Loading
                 Expanded(
                   child: Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 10),
                     child: Card(
                       elevation: 2,
                       child: ListView.builder(
+                        controller: _scrollController, // Gán controller vào đây
                         itemCount: filteredRows.length,
                         itemBuilder: (context, index) {
                           return Container(
@@ -304,7 +325,6 @@ class _ExcelAppState extends State<ExcelApp> {
     );
   }
 
-  // Widget ô nhập liệu tối ưu tốc độ
   Widget _buildFastCell(TextEditingController controller, TextInputType keyboardType, int flexValue) {
     return Expanded(
       flex: flexValue,
