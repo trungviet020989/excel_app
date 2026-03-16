@@ -11,7 +11,17 @@ void main() => runApp(MaterialApp(
       title: 'Quản Lý Kho',
       home: const ExcelApp(),
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(primarySwatch: Colors.teal, useMaterial3: true),
+      theme: ThemeData(
+        primarySwatch: Colors.teal,
+        useMaterial3: true,
+        // Cấu hình thanh cuộn toàn cục to hơn
+        scrollbarTheme: ScrollbarThemeData(
+          thickness: WidgetStateProperty.all(12), // Độ dày 12 pixel
+          thumbColor: WidgetStateProperty.all(Colors.teal.withOpacity(0.7)),
+          radius: const Radius.circular(10),
+          minThumbLength: 50,
+        ),
+      ),
     ));
 
 class ExcelApp extends StatefulWidget {
@@ -44,7 +54,7 @@ class _ExcelAppState extends State<ExcelApp> {
     super.dispose();
   }
 
-  // 1. CÀI ĐẶT THƯ MỤC
+  // --- CÁC HÀM HỆ THỐNG ---
   Future<void> _loadDefaultPath() async {
     final prefs = await SharedPreferences.getInstance();
     setState(() => _defaultPath = prefs.getString('default_path'));
@@ -61,7 +71,7 @@ class _ExcelAppState extends State<ExcelApp> {
     }
   }
 
-  // 2. THÊM DÒNG MỚI TỪ THANH CỐ ĐỊNH
+  // --- LOGIC XỬ LÝ DỮ LIỆU ---
   void _addFromTop() {
     if (_topInputCtrls[0].text.isEmpty) {
       _showSnackBar("Vui lòng nhập tên sản phẩm");
@@ -100,7 +110,7 @@ class _ExcelAppState extends State<ExcelApp> {
     });
   }
 
-  // 3. LƯU FILE EXCEL
+  // --- LOGIC FILE ---
   Future<void> _exportExcel() async {
     try {
       if (_defaultPath == null) {
@@ -136,7 +146,6 @@ class _ExcelAppState extends State<ExcelApp> {
     } catch (e) { _showSnackBar("Lỗi: $e"); }
   }
 
-  // 4. MỞ FILE EXCEL
   Future<void> _importExcel() async {
     try {
       FilePickerResult? result = await FilePicker.platform.pickFiles(
@@ -172,7 +181,6 @@ class _ExcelAppState extends State<ExcelApp> {
     } catch (e) { _showSnackBar("Lỗi khi mở file: $e"); }
   }
 
-  // 5. CHIA SẺ FILE
   Future<void> _pickAndShareFile() async {
     if (_defaultPath == null) {
       _showSnackBar("Vui lòng cài đặt thư mục lưu.");
@@ -218,7 +226,7 @@ class _ExcelAppState extends State<ExcelApp> {
     );
   }
 
-  // 6. GIAO DIỆN
+  // --- GIAO DIỆN ---
   @override
   Widget build(BuildContext context) {
     List<List<TextEditingController>> filteredRows = _controllers.where((row) {
@@ -240,12 +248,13 @@ class _ExcelAppState extends State<ExcelApp> {
       ),
       body: Column(
         children: [
+          // 1. Ô TÌM KIẾM
           Padding(
             padding: const EdgeInsets.all(8.0),
             child: TextField(
               onChanged: (v) => setState(() => _searchQuery = v),
               decoration: InputDecoration(
-                hintText: "Tìm sản phẩm...",
+                hintText: "Tìm tên sản phẩm...",
                 prefixIcon: const Icon(Icons.search),
                 filled: true, fillColor: Colors.white,
                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
@@ -253,24 +262,45 @@ class _ExcelAppState extends State<ExcelApp> {
               ),
             ),
           ),
+          
+          // 2. HEADER CỦA Ô NHẬP LIỆU CỐ ĐỊNH
           Container(
-            color: Colors.orange[100],
+            color: Colors.teal.shade700,
+            padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+            child: Row(
+              children: const [
+                Expanded(flex: 3, child: Text('Tên SP', style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold))),
+                Expanded(flex: 2, child: Center(child: Text('Bán', style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold)))),
+                Expanded(flex: 2, child: Center(child: Text('Nhập', style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold)))),
+                Expanded(flex: 1, child: Center(child: Text('SL', style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold)))),
+                SizedBox(width: 48), // Khoảng trống cho nút Add
+              ],
+            ),
+          ),
+
+          // 3. THANH NHẬP LIỆU CỐ ĐỊNH (Ô TRỐNG)
+          Container(
+            color: Colors.orange[50],
             padding: const EdgeInsets.all(8),
             child: Row(
               children: [
-                _buildInput(_topInputCtrls[0], "Tên SP", 3),
-                _buildInput(_topInputCtrls[1], "Bán", 2, isNum: true),
-                _buildInput(_topInputCtrls[2], "Nhập", 2, isNum: true),
-                _buildInput(_topInputCtrls[3], "SL", 1, isNum: true),
+                _buildInput(_topInputCtrls[0], "", 3), // Để trống hintText
+                _buildInput(_topInputCtrls[1], "", 2, isNum: true),
+                _buildInput(_topInputCtrls[2], "", 2, isNum: true),
+                _buildInput(_topInputCtrls[3], "", 1, isNum: true),
                 IconButton(icon: const Icon(Icons.add_circle, color: Colors.orange, size: 35), onPressed: _addFromTop),
               ],
             ),
           ),
+
+          // 4. DANH SÁCH DỮ LIỆU VỚI THANH CUỘN LỚN
           Expanded(
-            child: Scrollbar(
+            child: RawScrollbar( // Sử dụng RawScrollbar để tùy biến kích thước cực đại
               controller: _scrollController,
               thumbVisibility: true,
-              thickness: 7,
+              thickness: 18, // Độ dày thanh cuộn tăng lên 18px để dễ bấm
+              thumbColor: Colors.teal.withOpacity(0.5),
+              radius: const Radius.circular(5),
               child: ListView.builder(
                 controller: _scrollController,
                 itemCount: filteredRows.length,
@@ -300,8 +330,34 @@ class _ExcelAppState extends State<ExcelApp> {
     );
   }
 
-  Widget _buildInput(TextEditingController c, String h, int f, {bool isNum = false}) => Expanded(flex: f, child: Padding(padding: const EdgeInsets.symmetric(horizontal: 2), child: TextField(controller: c, keyboardType: isNum ? TextInputType.number : TextInputType.text, decoration: InputDecoration(hintText: h, filled: true, fillColor: Colors.white, border: OutlineInputBorder(borderRadius: BorderRadius.circular(5), borderSide: BorderSide.none), contentPadding: const EdgeInsets.symmetric(horizontal: 5)))));
-  Widget _buildCell(TextEditingController c, int f, {bool isNum = false}) => Expanded(flex: f, child: TextField(controller: c, keyboardType: isNum ? TextInputType.number : TextInputType.text, textAlign: isNum ? TextAlign.center : TextAlign.left, style: const TextStyle(fontSize: 13), decoration: const InputDecoration(border: InputBorder.none, contentPadding: EdgeInsets.symmetric(horizontal: 5))));
+  Widget _buildInput(TextEditingController c, String h, int f, {bool isNum = false}) => Expanded(
+    flex: f, 
+    child: Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 2), 
+      child: TextField(
+        controller: c, 
+        keyboardType: isNum ? TextInputType.number : TextInputType.text, 
+        decoration: InputDecoration(
+          hintText: h, 
+          filled: true, 
+          fillColor: Colors.white, 
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(5), borderSide: const BorderSide(color: Colors.orange, width: 0.5)), 
+          contentPadding: const EdgeInsets.symmetric(horizontal: 5)
+        )
+      )
+    )
+  );
+
+  Widget _buildCell(TextEditingController c, int f, {bool isNum = false}) => Expanded(
+    flex: f, 
+    child: TextField(
+      controller: c, 
+      keyboardType: isNum ? TextInputType.number : TextInputType.text, 
+      textAlign: isNum ? TextAlign.center : TextAlign.left, 
+      style: const TextStyle(fontSize: 13), 
+      decoration: const InputDecoration(border: InputBorder.none, contentPadding: EdgeInsets.symmetric(horizontal: 5))
+    )
+  );
   
   void _showSnackBar(String m) => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m)));
 
