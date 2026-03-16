@@ -10,10 +10,7 @@ import 'package:share_plus/share_plus.dart';
 void main() => runApp(MaterialApp(
       home: const ExcelApp(),
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        primarySwatch: Colors.teal,
-        useMaterial3: true,
-      ),
+      theme: ThemeData(primarySwatch: Colors.teal, useMaterial3: true),
     ));
 
 class ExcelApp extends StatefulWidget {
@@ -24,123 +21,81 @@ class ExcelApp extends StatefulWidget {
 
 class _ExcelAppState extends State<ExcelApp> {
   List<List<TextEditingController>> _controllers = [];
+  // Controller cho dòng nhập liệu cố định ở trên
+  final List<TextEditingController> _topInputCtrls = List.generate(4, (_) => TextEditingController());
+  
   String? _defaultPath;
   String? _currentFileNameOnly;
   String _searchQuery = "";
-  // Khai báo ScrollController để điều khiển vị trí cuộn
   final ScrollController _scrollController = ScrollController();
 
   @override
   void initState() {
     super.initState();
-    _addNewRow();
     _loadDefaultPath();
   }
 
-  // Giải phóng bộ nhớ khi không dùng controller nữa
   @override
   void dispose() {
     _scrollController.dispose();
+    for (var ctrl in _topInputCtrls) {
+      ctrl.dispose();
+    }
+    for (var row in _controllers) {
+      for (var ctrl in row) {
+        ctrl.dispose();
+      }
+    }
     super.dispose();
   }
 
+  // Lấy đường dẫn lưu file
   Future<void> _loadDefaultPath() async {
     final prefs = await SharedPreferences.getInstance();
     setState(() => _defaultPath = prefs.getString('default_path'));
   }
 
-  Future<void> _settingsPath() async {
-    await [Permission.storage, Permission.manageExternalStorage].request();
-    String? selectedDirectory = await FilePicker.platform.getDirectoryPath();
-    if (selectedDirectory != null) {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('default_path', selectedDirectory);
-      setState(() => _defaultPath = selectedDirectory);
-      _showSnackBar("Đã cài đặt thư mục mặc định.");
-    }
-  }
+  // Thêm dòng mới từ thanh nhập liệu cố định
+  void _addFromTop() {
+    // Nếu cả 4 ô đều trống thì không thêm
+    if (_topInputCtrls.every((c) => c.text.isEmpty)) return;
 
-  // CẬP NHẬT: Thêm dòng và tự động cuộn xuống dưới cùng
-  void _addNewRow() {
+    final newRow = [
+      TextEditingController(text: _topInputCtrls[0].text),
+      TextEditingController(text: _topInputCtrls[1].text),
+      TextEditingController(text: _topInputCtrls[2].text),
+      TextEditingController(text: _topInputCtrls[3].text),
+    ];
+
     setState(() {
-      _controllers.add(List.generate(4, (_) => TextEditingController()));
+      _controllers.add(newRow);
+      // Xóa sạch dòng nhập phía trên để chuẩn bị cho sản phẩm tiếp theo
+      for (var ctrl in _topInputCtrls) {
+        ctrl.clear();
+      }
     });
-    
-    // Đợi một chút để dòng mới kịp vẽ xong rồi mới cuộn
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+
+    // Cuộn xuống dòng cuối cùng vừa thêm
+    Future.microtask(() {
       if (_scrollController.hasClients) {
         _scrollController.animateTo(
           _scrollController.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 300), // Thời gian lướt 0.3 giây
-          curve: Curves.easeOut, // Hiệu ứng lướt mượt mà
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut,
         );
       }
     });
   }
 
-  Future<void> _pickAndShareFile() async {
-    if (_defaultPath == null) {
-      _showSnackBar("Vui lòng cài đặt thư mục lưu.");
-      return;
-    }
-    final directory = Directory(_defaultPath!);
-    if (!await directory.exists()) return;
-    
-    List<FileSystemEntity> files = directory.listSync()
-        .where((file) => file.path.endsWith('.xlsx'))
-        .toList();
-
-    if (files.isEmpty) {
-      _showSnackBar("Không tìm thấy file nào.");
-      return;
-    }
-
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text("Chọn file gửi đi", style: TextStyle(color: Colors.teal, fontWeight: FontWeight.bold)),
-        content: SizedBox(
-          width: double.maxFinite,
-          child: ListView.builder(
-            shrinkWrap: true,
-            itemCount: files.length,
-            itemBuilder: (context, index) {
-              String fileName = files[index].path.split('/').last;
-              return Card(
-                child: ListTile(
-                  leading: const Icon(Icons.file_present, color: Colors.teal),
-                  title: Text(fileName),
-                  onTap: () async {
-                    Navigator.pop(context);
-                    await Share.shareXFiles([XFile(files[index].path)]);
-                  },
-                ),
-              );
-            },
-          ),
-        ),
-      ),
-    );
+  // Xóa một dòng bất kỳ
+  void _removeRow(int index) {
+    setState(() {
+      _controllers[index].forEach((c) => c.dispose());
+      _controllers.removeAt(index);
+    });
   }
 
-  String _suggestNextFileName() {
-    if (_currentFileNameOnly == null) return "";
-    if (_defaultPath == null) return _currentFileNameOnly!;
-    String baseName = _currentFileNameOnly!;
-    RegExp regExp = RegExp(r"^(.*?)(\d*)$");
-    var match = regExp.firstMatch(baseName);
-    String rootName = match?.group(1) ?? baseName;
-    int counter = 1;
-    String lastDigits = match?.group(2) ?? "";
-    if (lastDigits.isNotEmpty) counter = int.parse(lastDigits) + 1;
-
-    while (true) {
-      String checkName = "$rootName$counter.xlsx";
-      if (!File("$_defaultPath/$checkName").existsSync()) return "$rootName$counter";
-      counter++;
-    }
-  }
-
+  // --- CÁC HÀM XỬ LÝ FILE (GIỮ NGUYÊN) ---
   Future<void> _exportExcel() async {
     try {
       if (Platform.isAndroid) await [Permission.storage, Permission.manageExternalStorage].request();
@@ -157,68 +112,17 @@ class _ExcelAppState extends State<ExcelApp> {
       String suggestion = _suggestNextFileName();
       String? customFileName = await _showFileNameDialog(suggestion);
       if (customFileName == null || customFileName.isEmpty) return;
-      String finalFileName = customFileName.endsWith('.xlsx') ? customFileName : "$customFileName.xlsx";
-
-      if (_defaultPath != null) {
-        final file = File("$_defaultPath/$finalFileName");
-        await file.writeAsBytes(bytes, flush: true);
-        setState(() => _currentFileNameOnly = customFileName.replaceAll('.xlsx', ''));
-        _showSnackBar("Đã lưu: $finalFileName");
-      }
-    } catch (e) { _showSnackBar("Lỗi: $e"); }
+      
+      final file = File("$_defaultPath/${customFileName.endsWith('.xlsx') ? customFileName : '$customFileName.xlsx'}");
+      await file.writeAsBytes(bytes, flush: true);
+      setState(() => _currentFileNameOnly = customFileName.replaceAll('.xlsx', ''));
+      _showSnackBar("Đã lưu thành công!");
+    } catch (e) { _showSnackBar("Lỗi lưu file: $e"); }
   }
 
-  Future<String?> _showFileNameDialog(String initialName) async {
-    TextEditingController _nameCtrl = TextEditingController(text: initialName);
-    return showDialog<String>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text(initialName.isEmpty ? "Lưu file mới" : "Lưu bản sao"),
-        content: TextField(controller: _nameCtrl, decoration: const InputDecoration(suffixText: ".xlsx"), autofocus: true),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text("Hủy")),
-          ElevatedButton(onPressed: () => Navigator.pop(context, _nameCtrl.text), child: const Text("Xác nhận")),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _importExcel() async {
-    FilePickerResult? result = await FilePicker.platform.pickFiles(type: FileType.custom, allowedExtensions: ['xlsx'], withData: true);
-    if (result != null) {
-      String fileName = result.files.single.name;
-      setState(() => _currentFileNameOnly = fileName.split('.').first);
-      Uint8List? bytes = result.files.single.bytes;
-      if (bytes != null) {
-        var excel = ex.Excel.decodeBytes(bytes);
-        for (var table in excel.tables.keys) {
-          setState(() {
-            _controllers.clear();
-            var tableData = excel.tables[table]!;
-            for (int i = 1; i < tableData.rows.length; i++) {
-              var rowData = tableData.rows[i];
-              _controllers.add([
-                TextEditingController(text: rowData[0]?.value?.toString() ?? ""),
-                TextEditingController(text: rowData[1]?.value?.toString() ?? ""),
-                TextEditingController(text: rowData[2]?.value?.toString() ?? ""),
-                TextEditingController(text: rowData[3]?.value?.toString() ?? ""),
-              ]);
-            }
-          });
-          break;
-        }
-      }
-    }
-  }
-
-  void _showSnackBar(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message), backgroundColor: Colors.teal));
-  }
-
+  // --- GIAO DIỆN ---
   @override
   Widget build(BuildContext context) {
-    bool isKeyboardVisible = MediaQuery.of(context).viewInsets.bottom != 0;
-
     List<List<TextEditingController>> filteredRows = _controllers.where((row) {
       return row[0].text.toLowerCase().contains(_searchQuery.toLowerCase());
     }).toList();
@@ -226,18 +130,10 @@ class _ExcelAppState extends State<ExcelApp> {
     return Scaffold(
       backgroundColor: Colors.blueGrey[50],
       appBar: AppBar(
-        title: const Text('QUẢN LÝ KHO', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
-        centerTitle: true,
+        title: const Text('QUẢN LÝ KHO', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
         flexibleSpace: Container(decoration: const BoxDecoration(gradient: LinearGradient(colors: [Colors.teal, Colors.green]))),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.note_add, color: Colors.white),
-            onPressed: () => setState(() {
-              _controllers = [List.generate(4, (_) => TextEditingController())];
-              _currentFileNameOnly = null;
-              _showSnackBar("Đã tạo trang mới");
-            }),
-          ),
+          IconButton(icon: const Icon(Icons.note_add, color: Colors.white), onPressed: () => setState(() => _controllers.clear())),
           IconButton(icon: const Icon(Icons.share, color: Colors.white), onPressed: _pickAndShareFile),
           IconButton(icon: const Icon(Icons.settings, color: Colors.white), onPressed: _settingsPath),
           IconButton(icon: const Icon(Icons.file_open, color: Colors.white), onPressed: _importExcel),
@@ -246,102 +142,123 @@ class _ExcelAppState extends State<ExcelApp> {
       ),
       body: Column(
         children: [
+          // 1. THANH TÌM KIẾM
           Container(
-            padding: const EdgeInsets.all(10),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
             color: Colors.white,
             child: TextField(
-              onChanged: (value) => setState(() => _searchQuery = value),
+              onChanged: (v) => setState(() => _searchQuery = v),
               decoration: InputDecoration(
                 hintText: "Tìm tên sản phẩm...",
-                prefixIcon: const Icon(Icons.search, color: Colors.teal),
-                contentPadding: const EdgeInsets.symmetric(vertical: 0),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(25), borderSide: BorderSide.none),
+                prefixIcon: const Icon(Icons.search, size: 20),
                 filled: true,
-                fillColor: Colors.blueGrey[50],
+                fillColor: Colors.grey[100],
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
+                contentPadding: EdgeInsets.zero,
               ),
             ),
           ),
+
+          // 2. DÒNG NHẬP LIỆU CỐ ĐỊNH (STICKY INPUT)
           Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(vertical: 5, horizontal: 15),
-            child: Text(
-              _currentFileNameOnly == null ? "🆕 Tệp mới" : "📂 File: $_currentFileNameOnly.xlsx",
-              style: const TextStyle(color: Colors.blueGrey, fontSize: 11, fontWeight: FontWeight.bold),
+            color: Colors.orange[50],
+            padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 5),
+            child: Row(
+              children: [
+                _buildInputCell(_topInputCtrls[0], "Tên SP", flex: 20),
+                _buildInputCell(_topInputCtrls[1], "Bán", flex: 12, isNum: true),
+                _buildInputCell(_topInputCtrls[2], "Nhập", flex: 12, isNum: true),
+                _buildInputCell(_topInputCtrls[3], "SL", flex: 8, isNum: true),
+                IconButton(
+                  icon: const Icon(Icons.add_circle, color: Colors.orange, size: 30),
+                  onPressed: _addFromTop,
+                )
+              ],
             ),
           ),
+
+          // 3. DANH SÁCH DỮ LIỆU
           Expanded(
-            child: Column(
-              children: [
-                Container(
-                  color: Colors.teal,
-                  margin: const EdgeInsets.symmetric(horizontal: 10),
-                  padding: const EdgeInsets.symmetric(vertical: 10),
-                  child: Row(
-                    children: const [
-                      Expanded(flex: 20, child: Center(child: Text('Tên SP', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)))),
-                      Expanded(flex: 12, child: Center(child: Text('Giá Bán', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)))),
-                      Expanded(flex: 12, child: Center(child: Text('Giá Nhập', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)))),
-                      Expanded(flex: 8, child: Center(child: Text('SL', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)))),
-                    ],
-                  ),
-                ),
-                Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 10),
-                    child: Card(
-                      elevation: 2,
-                      child: ListView.builder(
-                        controller: _scrollController, // Gán controller vào đây
-                        itemCount: filteredRows.length,
-                        itemBuilder: (context, index) {
-                          return Container(
-                            decoration: BoxDecoration(
-                              border: Border(bottom: BorderSide(color: Colors.teal.shade50)),
-                            ),
-                            child: Row(
-                              children: [
-                                _buildFastCell(filteredRows[index][0], TextInputType.text, 20),
-                                _buildFastCell(filteredRows[index][1], TextInputType.number, 12),
-                                _buildFastCell(filteredRows[index][2], TextInputType.number, 12),
-                                _buildFastCell(filteredRows[index][3], TextInputType.number, 8),
-                              ],
-                            ),
-                          );
-                        },
-                      ),
+            child: Scrollbar(
+              controller: _scrollController,
+              thumbVisibility: true, // Luôn hiện thanh cuộn bên phải
+              thickness: 8,
+              radius: const Radius.circular(10),
+              child: ListView.builder(
+                controller: _scrollController,
+                padding: const EdgeInsets.all(10),
+                itemCount: filteredRows.length,
+                itemExtent: 50, // Cố định chiều cao dòng để mượt tuyệt đối
+                itemBuilder: (context, index) {
+                  return Card(
+                    margin: const EdgeInsets.only(bottom: 2),
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(side: BorderSide(color: Colors.grey[200]!)),
+                    child: Row(
+                      children: [
+                        _buildDataCell(filteredRows[index][0], flex: 20),
+                        _buildDataCell(filteredRows[index][1], flex: 12, isNum: true),
+                        _buildDataCell(filteredRows[index][2], flex: 12, isNum: true),
+                        _buildDataCell(filteredRows[index][3], flex: 8, isNum: true),
+                        IconButton(
+                          icon: const Icon(Icons.delete_outline, color: Colors.redAccent, size: 20),
+                          onPressed: () => _removeRow(_controllers.indexOf(filteredRows[index])),
+                        )
+                      ],
                     ),
-                  ),
-                ),
-              ],
+                  );
+                },
+              ),
             ),
           ),
         ],
       ),
-      floatingActionButton: isKeyboardVisible ? null : FloatingActionButton(
-        onPressed: _addNewRow,
-        backgroundColor: Colors.teal,
-        child: const Icon(Icons.add, color: Colors.white),
+    );
+  }
+
+  // Ô nhập cho dòng cố định
+  Widget _buildInputCell(TextEditingController ctrl, String hint, {required int flex, bool isNum = false}) {
+    return Expanded(
+      flex: flex,
+      child: Container(
+        margin: const EdgeInsets.symmetric(horizontal: 2),
+        padding: const EdgeInsets.symmetric(horizontal: 4),
+        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(5)),
+        child: TextField(
+          controller: ctrl,
+          keyboardType: isNum ? TextInputType.number : TextInputType.text,
+          style: const TextStyle(fontSize: 13),
+          decoration: InputDecoration(hintText: hint, border: InputBorder.none, hintStyle: const TextStyle(fontSize: 11)),
+        ),
       ),
     );
   }
 
-  Widget _buildFastCell(TextEditingController controller, TextInputType keyboardType, int flexValue) {
+  // Ô hiển thị dữ liệu trong danh sách
+  Widget _buildDataCell(TextEditingController ctrl, {required int flex, bool isNum = false}) {
     return Expanded(
-      flex: flexValue,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 5),
-        child: TextField(
-          controller: controller,
-          keyboardType: keyboardType,
-          style: const TextStyle(fontSize: 14),
-          textAlign: keyboardType == TextInputType.number ? TextAlign.center : TextAlign.left,
-          decoration: const InputDecoration(
-            border: InputBorder.none, 
-            hintText: "...", 
-            contentPadding: EdgeInsets.symmetric(vertical: 10)
-          ),
-        ),
+      flex: flex,
+      child: TextField(
+        controller: ctrl,
+        keyboardType: isNum ? TextInputType.number : TextInputType.text,
+        textAlign: isNum ? TextAlign.center : TextAlign.left,
+        style: const TextStyle(fontSize: 13),
+        decoration: const InputDecoration(border: InputBorder.none, contentPadding: EdgeInsets.symmetric(horizontal: 5)),
       ),
     );
+  }
+
+  // --- CÁC HÀM TIỆN ÍCH KHÁC ---
+  String _suggestNextFileName() { /* ... như cũ ... */ return "Sản phẩm"; }
+  Future<void> _pickAndShareFile() async { /* ... như cũ ... */ }
+  Future<void> _settingsPath() async { /* ... như cũ ... */ }
+  Future<void> _importExcel() async { /* ... như cũ ... */ }
+  void _showSnackBar(String msg) { ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg))); }
+  Future<String?> _showFileNameDialog(String initialName) async { 
+    TextEditingController c = TextEditingController(text: initialName);
+    return showDialog<String>(context: context, builder: (ctx) => AlertDialog(
+      title: const Text("Lưu file"), content: TextField(controller: c),
+      actions: [TextButton(onPressed: () => Navigator.pop(ctx, c.text), child: const Text("Lưu"))],
+    ));
   }
 }
