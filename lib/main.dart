@@ -26,7 +26,7 @@ class _ExcelAppState extends State<ExcelApp> {
   List<List<TextEditingController>> _controllers = [];
   String? _defaultPath;
   String? _currentFileNameOnly;
-  String _searchQuery = ""; // Biến lưu từ khóa tìm kiếm
+  String _searchQuery = "";
 
   @override
   void initState() {
@@ -100,7 +100,6 @@ class _ExcelAppState extends State<ExcelApp> {
     );
   }
 
-  // --- LOGIC LƯU VÀ MỞ FILE ---
   String _suggestNextFileName() {
     if (_currentFileNameOnly == null) return "";
     if (_defaultPath == null) return _currentFileNameOnly!;
@@ -197,7 +196,6 @@ class _ExcelAppState extends State<ExcelApp> {
   Widget build(BuildContext context) {
     bool isKeyboardVisible = MediaQuery.of(context).viewInsets.bottom != 0;
 
-    // Logic lọc danh sách theo tên SP
     List<List<TextEditingController>> filteredRows = _controllers.where((row) {
       return row[0].text.toLowerCase().contains(_searchQuery.toLowerCase());
     }).toList();
@@ -225,7 +223,6 @@ class _ExcelAppState extends State<ExcelApp> {
       ),
       body: Column(
         children: [
-          // 1. Ô TÌM KIẾM SẢN PHẨM
           Container(
             padding: const EdgeInsets.all(10),
             color: Colors.white,
@@ -241,7 +238,6 @@ class _ExcelAppState extends State<ExcelApp> {
               ),
             ),
           ),
-          // 2. HIỂN THỊ TÊN FILE
           Container(
             width: double.infinity,
             padding: const EdgeInsets.symmetric(vertical: 5, horizontal: 15),
@@ -250,34 +246,52 @@ class _ExcelAppState extends State<ExcelApp> {
               style: const TextStyle(color: Colors.blueGrey, fontSize: 11, fontWeight: FontWeight.bold),
             ),
           ),
-          // 3. BẢNG DỮ LIỆU
+          // SỬ DỤNG LISTVIEW ĐỂ TỐI ƯU TỐC ĐỘ
           Expanded(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.symmetric(horizontal: 10),
-              child: Card(
-                elevation: 2,
-                child: Table(
-                  columnWidths: const {0: FlexColumnWidth(2), 1: FlexColumnWidth(1.2), 2: FlexColumnWidth(1.2), 3: FlexColumnWidth(0.8)},
-                  border: TableBorder.all(color: Colors.teal.shade50),
-                  children: [
-                    TableRow(
-                      decoration: const BoxDecoration(color: Colors.teal),
-                      children: ['Tên SP', 'Giá Bán', 'Giá Nhập', 'SL'].map((t) => Padding(
-                        padding: const EdgeInsets.all(10), 
-                        child: Text(t, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12))
-                      )).toList(),
-                    ),
-                    ...filteredRows.map((row) => TableRow(
-                      children: [
-                        _buildTableCell(row[0], TextInputType.text),
-                        _buildTableCell(row[1], TextInputType.number),
-                        _buildTableCell(row[2], TextInputType.number),
-                        _buildTableCell(row[3], TextInputType.number),
-                      ],
-                    )),
-                  ],
+            child: Column(
+              children: [
+                // Header cố định
+                Container(
+                  color: Colors.teal,
+                  margin: const EdgeInsets.symmetric(horizontal: 10),
+                  padding: const EdgeInsets.symmetric(vertical: 10),
+                  child: Row(
+                    children: const [
+                      Expanded(flex: 20, child: Center(child: Text('Tên SP', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)))),
+                      Expanded(flex: 12, child: Center(child: Text('Giá Bán', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)))),
+                      Expanded(flex: 12, child: Center(child: Text('Giá Nhập', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)))),
+                      Expanded(flex: 8, child: Center(child: Text('SL', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)))),
+                    ],
+                  ),
                 ),
-              ),
+                // Danh sách dòng dữ liệu nạp theo kiểu Lazy Loading
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                    child: Card(
+                      elevation: 2,
+                      child: ListView.builder(
+                        itemCount: filteredRows.length,
+                        itemBuilder: (context, index) {
+                          return Container(
+                            decoration: BoxDecoration(
+                              border: Border(bottom: BorderSide(color: Colors.teal.shade50)),
+                            ),
+                            child: Row(
+                              children: [
+                                _buildFastCell(filteredRows[index][0], TextInputType.text, 20),
+                                _buildFastCell(filteredRows[index][1], TextInputType.number, 12),
+                                _buildFastCell(filteredRows[index][2], TextInputType.number, 12),
+                                _buildFastCell(filteredRows[index][3], TextInputType.number, 8),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
         ],
@@ -290,15 +304,23 @@ class _ExcelAppState extends State<ExcelApp> {
     );
   }
 
-  Widget _buildTableCell(TextEditingController controller, TextInputType keyboardType) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 5),
-      child: TextField(
-        controller: controller,
-        keyboardType: keyboardType,
-        style: const TextStyle(fontSize: 14),
-        textAlign: keyboardType == TextInputType.number ? TextAlign.center : TextAlign.left,
-        decoration: const InputDecoration(border: InputBorder.none, hintText: "...", contentPadding: EdgeInsets.symmetric(vertical: 10)),
+  // Widget ô nhập liệu tối ưu tốc độ
+  Widget _buildFastCell(TextEditingController controller, TextInputType keyboardType, int flexValue) {
+    return Expanded(
+      flex: flexValue,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 5),
+        child: TextField(
+          controller: controller,
+          keyboardType: keyboardType,
+          style: const TextStyle(fontSize: 14),
+          textAlign: keyboardType == TextInputType.number ? TextAlign.center : TextAlign.left,
+          decoration: const InputDecoration(
+            border: InputBorder.none, 
+            hintText: "...", 
+            contentPadding: EdgeInsets.symmetric(vertical: 10)
+          ),
+        ),
       ),
     );
   }
